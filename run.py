@@ -7,6 +7,7 @@ import torch
 from datasets import load_dataset, Dataset
 from transformers import AutoTokenizer
 from comlrl.trainers.reinforce.magrpo import MAGRPOTrainer, MAGRPOConfig
+from utils import build_tokenizer, assert_no_think_tokens
 
 # ── Reward registry ──────────────────────────────────────────────────────────
 
@@ -41,20 +42,6 @@ def build_reward_fn(name: str):
     return REWARD_REGISTRY[name]
 
 
-def build_tokenizer(model_name: str, model_params: dict):
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.pad_token = tokenizer.eos_token
-    # Silence pad_token_id warning (see P0a findings)
-    if hasattr(tokenizer, "eos_token_id"):
-        tokenizer.pad_token_id = tokenizer.eos_token_id
-    return tokenizer
-
-
-def assert_no_think_tokens(text: str, context: str = ""):
-    if "<think>" in text or "</think>" in text:
-        raise AssertionError(
-            f"Thinking token detected in {context}: {text[:200]!r}"
-        )
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -70,7 +57,7 @@ def main():
     model_params = cfg.get("model_params", {})
     enable_thinking = model_params.get("enable_thinking", False)
 
-    tokenizer = build_tokenizer(model_name, model_params)
+    tokenizer = build_tokenizer(model_name)
     dataset = build_dataset(cfg)
     reward_fn = build_reward_fn(cfg["reward_func"])
 

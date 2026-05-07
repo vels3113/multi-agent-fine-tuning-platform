@@ -8,12 +8,15 @@ IMAGE_TAG="${IMAGE_TAG:-rocm:latest}"
 COMLRL_REPO_PATH="${COMLRL_REPO_PATH:-/root/ma-workspace/comlrl-repo}"
 WORKSPACE="$(cd "$(dirname "$0")/.." && pwd)"
 
+python3 -m compileall -q "$WORKSPACE" || { echo "FAIL: syntax error in platform source — fix before running Docker"; exit 1; }
+
 exec docker run --rm \
   --device /dev/kfd --device /dev/dri \
   --group-add render --group-add video \
   -v "$WORKSPACE:/workspace" \
   -v "$COMLRL_REPO_PATH:/comlrl" \
   -e HF_HOME=/workspace/.hf_cache \
+  -e TRANSFORMERS_VERBOSITY=error \
   -w /workspace \
   "$IMAGE_TAG" \
   bash -c "pip install -e /comlrl -q && $*"

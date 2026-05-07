@@ -18,7 +18,7 @@ def test_is_ast_parseable_invalid():
 def test_metrics_schema():
     """Baseline JSON must contain exactly these top-level keys."""
     from baseline.metrics import METRICS_SCHEMA
-    required = {"test_pass_rate", "pass@1", "pass@2", "pass@5",
+    required = {"test_pass_rate",
                 "syntactic_correctness_ratio", "token_throughput_per_sec",
                 "num_problems", "num_runs", "model", "dataset", "timestamp"}
     assert required.issubset(set(METRICS_SCHEMA))

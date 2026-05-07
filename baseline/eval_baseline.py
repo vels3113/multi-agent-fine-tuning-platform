@@ -1,18 +1,18 @@
 """
 P1b — Single-Agent Baseline Evaluator (generation only).
 
-Loads Qwen3-1.7B, generates completions for a pre-staged HumanEval problems
-JSON file, writes samples.jsonl and generation_stats.json.
+Instantiates one Agent, generates completions for a pre-staged HumanEval
+problems JSONL file, writes samples.jsonl and generation_stats.json.
 
 The demo runner (demo/scripts/run_baseline.sh) is responsible for:
-  - Staging the problems JSON into the Docker volume
+  - Staging the problems JSONL into the Docker volume
   - Calling evaluate_functional_correctness on the samples file
   - Merging test_pass_rate into the final baseline_metrics.json artifact
 
 Usage (from /workspace inside Docker):
     python -m baseline.eval_baseline \\
         --config configs/_run_config.yaml \\
-        --problems-path artifacts/P1b/problems.json \\
+        --problems-path artifacts/P1b/problems.jsonl \\
         --samples-path artifacts/P1b/samples.jsonl \\
         --stats-path artifacts/P1b/generation_stats.json
 """
@@ -24,87 +24,17 @@ import argparse
 import datetime
 import warnings
 import yaml
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
 
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 warnings.filterwarnings("ignore", category=UserWarning)
 
+from baseline.agent import Agent
 from baseline.metrics import compute_syntactic_ratio, compute_token_throughput
-
-
-def assert_no_think_tokens(text: str):
-    if "<think>" in text or "</think>" in text:
-        raise AssertionError(f"Thinking token detected: {text[:200]!r}")
 
 
 def load_config(path: str) -> dict:
     with open(path) as f:
         return yaml.safe_load(f)
-
-
-def generate_completions(
-    model, tokenizer, problems: dict, max_new_tokens: int, batch_size: int = 1,
-    stop_sequences: list[str] | None = None,
-) -> tuple[list[dict], int]:
-    """Return (completions, total_tokens_generated).
-
-    completions: list of {"task_id": str, "completion": str}
-    total_tokens: sum of generated token counts across all problems
-    """
-    from transformers import StoppingCriteria, StoppingCriteriaList
-
-    stop_ids = []
-    if stop_sequences:
-        for seq in stop_sequences:
-            ids = tokenizer.encode(seq, add_special_tokens=False)
-            if ids:
-                stop_ids.append(ids)
-
-    class StopOnSequences(StoppingCriteria):
-        def __call__(self, input_ids, scores, **kwargs):
-            if not stop_ids:
-                return False
-            for seq in stop_ids:
-                seq_len = len(seq)
-                if input_ids.shape[1] >= seq_len:
-                    if (input_ids[:, -seq_len:] == torch.tensor(seq, device=input_ids.device)).all(dim=1).any():
-                        return True
-            return False
-
-    stopping_criteria = StoppingCriteriaList([StopOnSequences()]) if stop_ids else None
-
-    items = list(problems.items())
-    completions = []
-    total_tokens = 0
-    for i in range(0, len(items), batch_size):
-        batch = items[i : i + batch_size]
-        task_ids = [tid for tid, _ in batch]
-        prompts = [problem["prompt"] for _, problem in batch]
-        inputs = tokenizer(
-            prompts, return_tensors="pt", padding=True, truncation=False
-        ).to(model.device)
-        generate_kwargs = dict(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=False,
-            pad_token_id=tokenizer.pad_token_id,
-        )
-        if stopping_criteria:
-            generate_kwargs["stopping_criteria"] = stopping_criteria
-        with torch.no_grad():
-            outputs = model.generate(**generate_kwargs)
-        for j, task_id in enumerate(task_ids):
-            generated = outputs[j][inputs["input_ids"].shape[1]:]
-            text = tokenizer.decode(generated, skip_special_tokens=True)
-            # Strip trailing stop sequence if present
-            for seq in (stop_sequences or []):
-                if text.endswith(seq):
-                    text = text[: -len(seq)]
-            assert_no_think_tokens(text)
-            completions.append({"task_id": task_id, "completion": text})
-            total_tokens += generated.shape[0]
-    return completions, total_tokens
 
 
 def write_samples_jsonl(completions: list[dict], path: str):
@@ -122,7 +52,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     parser.add_argument("--problems-path", required=True,
-                        help="Path to staged problems JSON (dict of task_id -> problem)")
+                        help="Path to staged problems JSONL (one problem per line)")
     parser.add_argument("--samples-path", default=None,
                         help="Override baseline.samples_path from config")
     parser.add_argument("--stats-path", default=None,
@@ -132,6 +62,8 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+
+    import torch
     torch.manual_seed(cfg["seed"])
 
     model_name = cfg["model"]
@@ -151,15 +83,8 @@ def main():
                 task = json.loads(line)
                 problems[task["task_id"]] = task
 
-    print(f"Loading model: {model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.pad_token_id = tokenizer.eos_token_id
-
-    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16)
-    model.generation_config.enable_thinking = False
-    model.eval()
-    model.to("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Loading agent: {model_name}")
+    agent = Agent(model_name=model_name, stop_sequences=stop_sequences)
 
     all_completions = []
     run_syntactic_ratios = []
@@ -168,15 +93,13 @@ def main():
     for run_idx in range(num_runs):
         print(f"Run {run_idx + 1}/{num_runs}: generating {len(problems)} completions (batch_size={batch_size})...")
         t0 = time.perf_counter()
-        completions, total_tokens = generate_completions(model, tokenizer, problems, max_new_tokens, batch_size, stop_sequences)
+        completions, total_tokens = agent.generate_completions(problems, max_new_tokens, batch_size)
         elapsed = time.perf_counter() - t0
 
         all_completions.extend(completions)
         run_syntactic_ratios.append(compute_syntactic_ratio([c["completion"] for c in completions]))
         run_throughputs.append(compute_token_throughput(total_tokens, elapsed))
 
-    # Combined samples file: N completions per task_id.
-    # evaluate_functional_correctness uses all of them when estimating pass@1.
     write_samples_jsonl(all_completions, samples_path)
 
     stats = {
