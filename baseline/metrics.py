@@ -3,7 +3,10 @@ import ast
 
 # Keys required by P4b dashboard — do not add or remove without updating P4b plan.
 METRICS_SCHEMA = [
-    "test_pass_rate",
+    "test_pass_rate",  # alias for pass@1, kept for P4b compatibility
+    "pass@1",
+    "pass@2",
+    "pass@5",
     "syntactic_correctness_ratio",
     "token_throughput_per_sec",
     "num_problems",
