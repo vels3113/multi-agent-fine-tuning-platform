@@ -3,7 +3,9 @@ model: "Qwen/Qwen3-1.7B"
 
 model_params:
   enable_thinking: false
-  max_new_tokens: 512
+  max_new_tokens: 2048
+  # Stop at next top-level def/class to avoid multi-function verbosity
+  stop_sequences: ["\ndef ", "\nclass "]
 
 baseline:
   num_problems: 164        # full HumanEval test split

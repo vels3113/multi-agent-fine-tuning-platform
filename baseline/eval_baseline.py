@@ -44,13 +44,36 @@ def load_config(path: str) -> dict:
 
 
 def generate_completions(
-    model, tokenizer, problems: dict, max_new_tokens: int, batch_size: int = 1
+    model, tokenizer, problems: dict, max_new_tokens: int, batch_size: int = 1,
+    stop_sequences: list[str] | None = None,
 ) -> tuple[list[dict], int]:
     """Return (completions, total_tokens_generated).
 
     completions: list of {"task_id": str, "completion": str}
     total_tokens: sum of generated token counts across all problems
     """
+    from transformers import StoppingCriteria, StoppingCriteriaList
+
+    stop_ids = []
+    if stop_sequences:
+        for seq in stop_sequences:
+            ids = tokenizer.encode(seq, add_special_tokens=False)
+            if ids:
+                stop_ids.append(ids)
+
+    class StopOnSequences(StoppingCriteria):
+        def __call__(self, input_ids, scores, **kwargs):
+            if not stop_ids:
+                return False
+            for seq in stop_ids:
+                seq_len = len(seq)
+                if input_ids.shape[1] >= seq_len:
+                    if (input_ids[:, -seq_len:] == torch.tensor(seq, device=input_ids.device)).all(dim=1).any():
+                        return True
+            return False
+
+    stopping_criteria = StoppingCriteriaList([StopOnSequences()]) if stop_ids else None
+
     items = list(problems.items())
     completions = []
     total_tokens = 0
@@ -61,16 +84,23 @@ def generate_completions(
         inputs = tokenizer(
             prompts, return_tensors="pt", padding=True, truncation=False
         ).to(model.device)
+        generate_kwargs = dict(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            pad_token_id=tokenizer.pad_token_id,
+        )
+        if stopping_criteria:
+            generate_kwargs["stopping_criteria"] = stopping_criteria
         with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=False,
-                pad_token_id=tokenizer.pad_token_id,
-            )
+            outputs = model.generate(**generate_kwargs)
         for j, task_id in enumerate(task_ids):
             generated = outputs[j][inputs["input_ids"].shape[1]:]
             text = tokenizer.decode(generated, skip_special_tokens=True)
+            # Strip trailing stop sequence if present
+            for seq in (stop_sequences or []):
+                if text.endswith(seq):
+                    text = text[: -len(seq)]
             assert_no_think_tokens(text)
             completions.append({"task_id": task_id, "completion": text})
             total_tokens += generated.shape[0]
@@ -109,7 +139,8 @@ def main():
     samples_path = args.samples_path or baseline_cfg.get("samples_path", "artifacts/P1b/samples.jsonl")
     stats_path = args.stats_path or baseline_cfg.get("stats_path", "artifacts/P1b/generation_stats.json")
     num_runs = args.num_runs if args.num_runs is not None else baseline_cfg.get("num_runs", 1)
-    max_new_tokens = cfg["model_params"].get("max_new_tokens", 512)
+    max_new_tokens = cfg["model_params"].get("max_new_tokens", 2048)
+    stop_sequences = cfg["model_params"].get("stop_sequences", [])
     batch_size = baseline_cfg.get("batch_size", 1)
 
     problems = {}
@@ -137,7 +168,7 @@ def main():
     for run_idx in range(num_runs):
         print(f"Run {run_idx + 1}/{num_runs}: generating {len(problems)} completions (batch_size={batch_size})...")
         t0 = time.perf_counter()
-        completions, total_tokens = generate_completions(model, tokenizer, problems, max_new_tokens, batch_size)
+        completions, total_tokens = generate_completions(model, tokenizer, problems, max_new_tokens, batch_size, stop_sequences)
         elapsed = time.perf_counter() - t0
 
         all_completions.extend(completions)
