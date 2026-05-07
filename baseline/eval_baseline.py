@@ -22,9 +22,13 @@ import json
 import time
 import argparse
 import datetime
+import warnings
 import yaml
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
+
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+warnings.filterwarnings("ignore", category=UserWarning)
 
 from baseline.metrics import compute_syntactic_ratio, compute_token_throughput
 
