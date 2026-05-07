@@ -1,6 +1,7 @@
 import sys
 import os
 import argparse
+import dataclasses
 import yaml
 import torch
 from datasets import load_dataset, Dataset
@@ -73,11 +74,12 @@ def main():
     dataset = build_dataset(cfg)
     reward_fn = build_reward_fn(cfg["reward_func"])
 
+    _magrpo_fields = {f.name for f in dataclasses.fields(MAGRPOConfig)}
     trainer_cfg = MAGRPOConfig(
         num_train_epochs=cfg["num_train_epochs"],
         num_agents=cfg["num_agents"],
         **{k: v for k, v in model_params.items()
-           if k not in ("enable_thinking",) and k in MAGRPOConfig.__dataclass_fields__},
+           if k not in ("enable_thinking",) and k in _magrpo_fields},
     )
 
     print(f"enable_thinking={enable_thinking} | model={model_name}")
@@ -98,16 +100,16 @@ def main():
             if m is not None and hasattr(m, "generation_config"):
                 m.generation_config.update({"enable_thinking": False})
 
-    # Wrap trainer to assert no <think> tokens in every rollout batch
+    # Wrap _generate_completions to assert no <think> tokens in every rollout
     if not enable_thinking:
-        _original_step = trainer.training_step
-        def _guarded_step(model, inputs):
-            result = _original_step(model, inputs)
-            for seq in inputs.get("input_ids", []):
-                decoded = tokenizer.decode(seq, skip_special_tokens=False)
-                assert_no_think_tokens(decoded, context="training rollout")
-            return result
-        trainer.training_step = _guarded_step
+        _original_gen = trainer._generate_completions
+        def _guarded_gen(*args, **kwargs):
+            completions = _original_gen(*args, **kwargs)
+            for text in (completions if isinstance(completions, list) else [completions]):
+                if isinstance(text, str):
+                    assert_no_think_tokens(text, context="rollout completion")
+            return completions
+        trainer._generate_completions = _guarded_gen
 
     trainer.train()
     print("Training complete.")
