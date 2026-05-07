@@ -109,7 +109,19 @@ def main():
     batch_size = baseline_cfg.get("batch_size", 1)
 
     with open(args.problems_path) as f:
-        problems = json.load(f)
+        first = f.read(1)
+    with open(args.problems_path) as f:
+        if first == "{":
+            # Legacy: single JSON dict {task_id: problem}
+            problems = json.load(f)
+        else:
+            # jsonl: one problem object per line (standard human_eval format)
+            problems = {}
+            for line in f:
+                line = line.strip()
+                if line:
+                    task = json.loads(line)
+                    problems[task["task_id"]] = task
 
     print(f"Loading model: {model_name}")
     tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
