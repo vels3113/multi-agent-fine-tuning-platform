@@ -4,4 +4,4 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-exec "$SCRIPT_DIR/docker-run.sh" "pip install pyyaml datasets -q && python smoke_test_thinking.py"
+exec "$SCRIPT_DIR/docker-run.sh" "pip install pyyaml datasets -q && python tests/smoke_test_thinking.py"
