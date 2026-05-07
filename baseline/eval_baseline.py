@@ -121,7 +121,7 @@ def main():
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16)
+    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16)
     model.generation_config.enable_thinking = False
     model.eval()
     model.to("cuda" if torch.cuda.is_available() else "cpu")
