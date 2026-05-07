@@ -93,6 +93,8 @@ def main():
                         help="Override baseline.samples_path from config")
     parser.add_argument("--stats-path", default=None,
                         help="Override baseline.stats_path from config")
+    parser.add_argument("--num-runs", type=int, default=None,
+                        help="Override baseline.num_runs from config")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -102,6 +104,7 @@ def main():
     baseline_cfg = cfg.get("baseline", {})
     samples_path = args.samples_path or baseline_cfg.get("samples_path", "artifacts/P1b/samples.jsonl")
     stats_path = args.stats_path or baseline_cfg.get("stats_path", "artifacts/P1b/generation_stats.json")
+    num_runs = args.num_runs if args.num_runs is not None else baseline_cfg.get("num_runs", 1)
     max_new_tokens = cfg["model_params"].get("max_new_tokens", 512)
     batch_size = baseline_cfg.get("batch_size", 1)
 
@@ -118,18 +121,29 @@ def main():
     model.eval()
     model.to("cuda" if torch.cuda.is_available() else "cpu")
 
-    print(f"Generating completions for {len(problems)} HumanEval problems (batch_size={batch_size})...")
-    t0 = time.perf_counter()
-    completions, total_tokens = generate_completions(model, tokenizer, problems, max_new_tokens, batch_size)
-    elapsed = time.perf_counter() - t0
+    all_completions = []
+    run_syntactic_ratios = []
+    run_throughputs = []
 
-    write_samples_jsonl(completions, samples_path)
+    for run_idx in range(num_runs):
+        print(f"Run {run_idx + 1}/{num_runs}: generating {len(problems)} completions (batch_size={batch_size})...")
+        t0 = time.perf_counter()
+        completions, total_tokens = generate_completions(model, tokenizer, problems, max_new_tokens, batch_size)
+        elapsed = time.perf_counter() - t0
 
-    raw_completions = [c["completion"] for c in completions]
+        all_completions.extend(completions)
+        run_syntactic_ratios.append(compute_syntactic_ratio([c["completion"] for c in completions]))
+        run_throughputs.append(compute_token_throughput(total_tokens, elapsed))
+
+    # Combined samples file: N completions per task_id.
+    # evaluate_functional_correctness uses all of them when estimating pass@1.
+    write_samples_jsonl(all_completions, samples_path)
+
     stats = {
-        "syntactic_correctness_ratio": compute_syntactic_ratio(raw_completions),
-        "token_throughput_per_sec": compute_token_throughput(total_tokens, elapsed),
+        "syntactic_correctness_ratio": sum(run_syntactic_ratios) / num_runs,
+        "token_throughput_per_sec": sum(run_throughputs) / num_runs,
         "num_problems": len(problems),
+        "num_runs": num_runs,
         "model": model_name,
         "dataset": "openai/openai_humaneval",
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
@@ -142,7 +156,7 @@ def main():
         json.dump(stats, f, indent=2)
 
     print(json.dumps(stats, indent=2))
-    print(f"\nGeneration complete. Stats written to {stats_path}")
+    print(f"\nGeneration complete ({num_runs} run(s)). Stats written to {stats_path}")
     return 0
 
 

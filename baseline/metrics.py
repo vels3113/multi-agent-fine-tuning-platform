@@ -7,6 +7,7 @@ METRICS_SCHEMA = [
     "syntactic_correctness_ratio",
     "token_throughput_per_sec",
     "num_problems",
+    "num_runs",
     "model",
     "dataset",
     "timestamp",

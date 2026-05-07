@@ -19,7 +19,7 @@ def test_metrics_schema():
     """Baseline JSON must contain exactly these top-level keys."""
     from baseline.metrics import METRICS_SCHEMA
     required = {"test_pass_rate", "syntactic_correctness_ratio", "token_throughput_per_sec",
-                "num_problems", "model", "dataset", "timestamp"}
+                "num_problems", "num_runs", "model", "dataset", "timestamp"}
     assert required.issubset(set(METRICS_SCHEMA))
 
 
