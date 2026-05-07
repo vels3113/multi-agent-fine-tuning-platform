@@ -1,0 +1,16 @@
+seed: 42
+model: "Qwen/Qwen3-1.7B"
+
+model_params:
+  enable_thinking: false
+  max_new_tokens: 2048
+  # Stop at next top-level def/class to avoid multi-function verbosity
+  stop_sequences: ["\ndef ", "\nclass "]
+
+baseline:
+  num_problems: 164        # full HumanEval test split
+  num_runs: 5              # repeated runs for averaged metrics; set to 1 for smoke
+  batch_size: 16           # MI300X 192 GB handles 16× Qwen3-1.7B easily; ~2x throughput vs 8
+  samples_path: "artifacts/P1b/samples.jsonl"
+  stats_path: "artifacts/P1b/generation_stats.json"
+  # output_path (final merged artifact) is assembled by the demo runner, not the evaluator
