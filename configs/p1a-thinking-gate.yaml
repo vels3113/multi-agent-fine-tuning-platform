@@ -1,0 +1,22 @@
+seed: 42
+model: "Qwen/Qwen3-1.7B"
+reward_func: "dummy"
+num_agents: 1
+num_train_epochs: 1
+
+dataset:
+  type: inline
+  prompts:
+    - "Write a Python function that adds two numbers:"
+    - "Write a Python function that reverses a string:"
+    - "Write a Python function that checks if a number is prime:"
+    - "Write a Python function that computes the factorial:"
+
+model_params:
+  enable_thinking: false
+  max_new_tokens: 64
+  num_generations: 2
+  num_turns: 1
+  rollout_buffer_size: 2
+  train_batch_size: 2
+  logging_steps: 1
