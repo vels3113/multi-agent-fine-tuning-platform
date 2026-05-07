@@ -1,0 +1,13 @@
+seed: 42
+model: "Qwen/Qwen3-1.7B"
+
+model_params:
+  enable_thinking: false
+  max_new_tokens: 512
+
+baseline:
+  num_problems: 164        # full HumanEval test split
+  batch_size: 8            # safe on MI300X 192 GB; set to 1 to disable batching
+  samples_path: "artifacts/P1b/samples.jsonl"
+  stats_path: "artifacts/P1b/generation_stats.json"
+  # output_path (final merged artifact) is assembled by the demo runner, not the evaluator
