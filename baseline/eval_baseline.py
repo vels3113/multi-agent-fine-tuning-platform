@@ -108,20 +108,13 @@ def main():
     max_new_tokens = cfg["model_params"].get("max_new_tokens", 512)
     batch_size = baseline_cfg.get("batch_size", 1)
 
+    problems = {}
     with open(args.problems_path) as f:
-        first = f.read(1)
-    with open(args.problems_path) as f:
-        if first == "{":
-            # Legacy: single JSON dict {task_id: problem}
-            problems = json.load(f)
-        else:
-            # jsonl: one problem object per line (standard human_eval format)
-            problems = {}
-            for line in f:
-                line = line.strip()
-                if line:
-                    task = json.loads(line)
-                    problems[task["task_id"]] = task
+        for line in f:
+            line = line.strip()
+            if line:
+                task = json.loads(line)
+                problems[task["task_id"]] = task
 
     print(f"Loading model: {model_name}")
     tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
