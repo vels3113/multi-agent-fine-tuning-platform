@@ -1,20 +1,20 @@
 """
-P1b — Single-Agent Baseline Evaluator (generation only).
+P1b — Single-Agent Baseline Evaluator (generation + pass@k evaluation).
 
 Instantiates one Agent, generates completions for a pre-staged HumanEval
 problems JSONL file, writes samples.jsonl and generation_stats.json.
 
-The demo runner (demo/scripts/run_baseline.sh) is responsible for:
-  - Staging the problems JSONL into the Docker volume
-  - Calling evaluate_functional_correctness on the samples file
-  - Merging test_pass_rate into the final baseline_metrics.json artifact
+Pass@k evaluation now runs inside Docker immediately after generation when
+--problems-path is supplied. The result (pass@1) is included in the stats
+artifact and in the session record written to --sessions-dir (if provided).
 
 Usage (from /workspace inside Docker):
     python -m baseline.eval_baseline \\
         --config configs/_run_config.yaml \\
         --problems-path artifacts/P1b/problems.jsonl \\
         --samples-path artifacts/P1b/samples.jsonl \\
-        --stats-path artifacts/P1b/generation_stats.json
+        --stats-path artifacts/P1b/generation_stats.json \\
+        --sessions-dir artifacts/P1b/sessions
 """
 import sys
 import os
@@ -30,6 +30,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 from baseline.agent import Agent
 from baseline.metrics import compute_syntactic_ratio, compute_token_throughput
+from session import Session
 
 
 def load_config(path: str) -> dict:
@@ -59,6 +60,8 @@ def main():
                         help="Override baseline.stats_path from config")
     parser.add_argument("--num-runs", type=int, default=None,
                         help="Override baseline.num_runs from config")
+    parser.add_argument("--sessions-dir", default=None,
+                        help="Directory to write session JSON (skipped if not set)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -86,6 +89,18 @@ def main():
     print(f"Loading agent: {model_name}")
     agent = Agent(model_name=model_name, stop_sequences=stop_sequences)
 
+    session_config = {
+        "model": model_name,
+        "dataset": "openai/openai_humaneval",
+        "num_problems": len(problems),
+        "num_runs": num_runs,
+        "batch_size": batch_size,
+        "max_new_tokens": max_new_tokens,
+        "stop_sequences": stop_sequences,
+        "seed": cfg["seed"],
+    }
+    session = Session.start(session_config, stage={"baseline": True, "training": False})
+
     all_completions = []
     run_syntactic_ratios = []
     run_throughputs = []
@@ -102,6 +117,17 @@ def main():
 
     write_samples_jsonl(all_completions, samples_path)
 
+    if args.problems_path:
+        from human_eval.evaluation import evaluate_functional_correctness
+        results = evaluate_functional_correctness(
+            samples_path,
+            problem_file=args.problems_path,
+            k=[1],
+        )
+        test_pass_rate = results.get("pass@1", None)
+    else:
+        test_pass_rate = None
+
     stats = {
         "syntactic_correctness_ratio": sum(run_syntactic_ratios) / num_runs,
         "token_throughput_per_sec": sum(run_throughputs) / num_runs,
@@ -110,7 +136,16 @@ def main():
         "model": model_name,
         "dataset": "openai/openai_humaneval",
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "test_pass_rate": test_pass_rate,
     }
+
+    session_metrics = {
+        "test_pass_rate": test_pass_rate,
+        "syntactic_correctness_ratio": stats["syntactic_correctness_ratio"],
+        "token_throughput_per_sec": stats["token_throughput_per_sec"],
+    }
+    if args.sessions_dir:
+        session.update(session_metrics, args.sessions_dir)
 
     stats_dir = os.path.dirname(stats_path)
     if stats_dir:
