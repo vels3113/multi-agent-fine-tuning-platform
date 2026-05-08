@@ -11,12 +11,12 @@ model_params:
   enable_thinking: false
   joint_mode: "aligned"
   num_turns: 1
-  num_generations: 8
-  max_new_tokens: 512
-  learning_rate: 1.0e-6
-  kl_coef: 0.04
-  per_device_train_batch_size: 1
-  rollout_buffer_size: 8
+  num_generations: 8                # MAGRPOConfig field
+  max_new_tokens: 512               # MAGRPOConfig field
+  train_batch_size: 1               # MAGRPOConfig field
+  rollout_buffer_size: 8            # MAGRPOConfig field
+  agent_learning_rate: 1.0e-6       # paper lr (MAGRPOConfig.agent_learning_rate)
+  # kl_coef: not a MAGRPOConfig field in CoMLRL 1.3.8 — deviation documented in GATE_SUMMARY
 
 dataset:
   type: "mbpp"
