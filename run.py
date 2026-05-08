@@ -34,6 +34,12 @@ def build_dataset(cfg: dict) -> Dataset:
     ds_cfg = cfg["dataset"]
     if ds_cfg.get("type") == "inline":
         return Dataset.from_dict({"prompt": ds_cfg["prompts"]})
+    if ds_cfg.get("type") == "mbpp":
+        ds = load_dataset("google-research-datasets/mbpp", split=ds_cfg.get("split", "train"))
+        max_problems = ds_cfg.get("max_problems")
+        if max_problems:
+            ds = ds.select(range(min(max_problems, len(ds))))
+        return ds.rename_column("text", "prompt")
     return load_dataset(ds_cfg["name"], split=ds_cfg.get("split", "train"))
 
 
