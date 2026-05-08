@@ -116,6 +116,23 @@ def test_config_baseline_missing_model_fails():
         jsonschema.validate(session, schema)
 
 
+def test_p2b_smoke_config_scope_locks():
+    """P2b smoke config must satisfy all RULES.md scope locks."""
+    import yaml, os
+    config_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "demo", "configs", "p2b-smoke.yaml"
+    )
+    # File doesn't exist yet — this test will fail until Task 1 is complete
+    assert os.path.exists(config_path), "demo/configs/p2b-smoke.yaml not created yet"
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f)
+    assert cfg["num_agents"] == 2
+    assert cfg["model_params"]["enable_thinking"] is False
+    assert cfg["model_params"]["joint_mode"] == "aligned"
+    assert cfg["model_params"]["num_turns"] == 1
+    assert cfg["model"] == "Qwen/Qwen3-1.7B"
+
+
 def test_run_py_stores_cfg_under_training_key():
     """Session created by run.py stores cfg under config['training'], not at top level."""
     training_cfg = {
