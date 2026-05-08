@@ -51,6 +51,38 @@ class Session:
         instance._t0 = time.perf_counter()
         return instance
 
+    @classmethod
+    def load(cls, session_id: str, sessions_dir: str) -> "Session":
+        """Resume a prior session (e.g. after a checkpoint recovery).
+
+        Reads the existing JSON, resets the peak memory stats, and restarts
+        the wall-clock timer so total_duration_sec accumulates correctly on
+        the next update() call.
+        """
+        path = os.path.join(sessions_dir, f"{session_id}.json")
+        with open(path) as f:
+            data = json.load(f)
+
+        try:
+            import torch
+        except ImportError:
+            pass
+        else:
+            if torch.cuda.is_available():
+                torch.cuda.reset_peak_memory_stats()
+
+        instance = cls(
+            session_id=data["session_id"],
+            timestamp=data["timestamp"],
+            user=data.get("user"),
+            stage=data["stage"],
+            config=data["config"],
+            metrics=data.get("metrics", {}),
+            runtime=data["runtime"],
+        )
+        instance._t0 = time.perf_counter()
+        return instance
+
     def update(self, metrics: dict, sessions_dir: str) -> None:
         elapsed = time.perf_counter() - self._t0
         self.metrics = metrics

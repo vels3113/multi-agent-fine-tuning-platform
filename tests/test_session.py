@@ -62,3 +62,26 @@ def test_session_update_creates_sessions_dir():
         new_dir = os.path.join(tmpdir, "sessions", "nested")
         s.update(metrics={}, sessions_dir=new_dir)
         assert os.path.isdir(new_dir)
+
+
+def test_session_load_roundtrip():
+    from session import Session
+    s = Session.start(
+        config={"model": "m", "dataset": "d", "seed": 0},
+        stage={"baseline": False, "training": True},
+    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        s.update(metrics={"loss": 0.5}, sessions_dir=tmpdir)
+
+        resumed = Session.load(s.session_id, tmpdir)
+        assert resumed.session_id == s.session_id
+        assert resumed.stage == {"baseline": False, "training": True}
+        assert resumed.metrics == {"loss": 0.5}
+        assert resumed.config == s.config
+        assert resumed._t0 > 0
+
+        resumed.update(metrics={"loss": 0.3}, sessions_dir=tmpdir)
+        with open(os.path.join(tmpdir, f"{s.session_id}.json")) as f:
+            data = json.load(f)
+        assert data["metrics"]["loss"] == pytest.approx(0.3)
+        assert data["runtime"]["total_duration_sec"] >= 0
