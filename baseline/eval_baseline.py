@@ -117,16 +117,13 @@ def main():
 
     write_samples_jsonl(all_completions, samples_path)
 
-    if args.problems_path:
-        from human_eval.evaluation import evaluate_functional_correctness
-        results = evaluate_functional_correctness(
-            samples_path,
-            problem_file=args.problems_path,
-            k=[1],
-        )
-        test_pass_rate = results.get("pass@1", None)
-    else:
-        test_pass_rate = None
+    from human_eval.evaluation import evaluate_functional_correctness
+    results = evaluate_functional_correctness(
+        samples_path,
+        problem_file=args.problems_path,
+        k=[1],
+    )
+    test_pass_rate = results.get("pass@1", None)
 
     stats = {
         "syntactic_correctness_ratio": sum(run_syntactic_ratios) / num_runs,
@@ -139,19 +136,21 @@ def main():
         "test_pass_rate": test_pass_rate,
     }
 
-    session_metrics = {
-        "test_pass_rate": test_pass_rate,
-        "syntactic_correctness_ratio": stats["syntactic_correctness_ratio"],
-        "token_throughput_per_sec": stats["token_throughput_per_sec"],
-    }
-    if args.sessions_dir:
-        session.update(session_metrics, args.sessions_dir)
-
     stats_dir = os.path.dirname(stats_path)
     if stats_dir:
         os.makedirs(stats_dir, exist_ok=True)
     with open(stats_path, "w") as f:
         json.dump(stats, f, indent=2)
+
+    if args.sessions_dir:
+        session.update(
+            {
+                "test_pass_rate": test_pass_rate,
+                "syntactic_correctness_ratio": stats["syntactic_correctness_ratio"],
+                "token_throughput_per_sec": stats["token_throughput_per_sec"],
+            },
+            args.sessions_dir,
+        )
 
     print(json.dumps(stats, indent=2))
     print(f"\nGeneration complete ({num_runs} run(s)). Stats written to {stats_path}")
