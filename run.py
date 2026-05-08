@@ -123,8 +123,33 @@ def main():
             return completions
         trainer._generate_completions = _guarded_gen
 
+    # Wrap _compute_loss_with_gradients to log per-step loss to stdout
+    _loss_history = []
+    _step_counter = [0]
+    _original_loss = trainer._compute_loss_with_gradients
+    def _logging_loss(agent, completions_data, returns):
+        loss = _original_loss(agent, completions_data, returns)
+        _step_counter[0] += 1
+        loss_val = loss.item() if hasattr(loss, 'item') else float(loss)
+        _loss_history.append(loss_val)
+        if _step_counter[0] % 8 == 1 or _step_counter[0] <= 3:
+            print(f"step={_step_counter[0]} loss={loss_val:.4f}", flush=True)
+        return loss
+    trainer._compute_loss_with_gradients = _logging_loss
+
     trainer.train()
+    if _loss_history:
+        print(f"loss_first={_loss_history[0]:.4f} loss_last={_loss_history[-1]:.4f} "
+              f"loss_mean={sum(_loss_history)/len(_loss_history):.4f} steps={len(_loss_history)}")
     print("Training complete.")
+
+    # Save checkpoint
+    checkpoint_dir = cfg.get("checkpoint", {}).get("output_dir")
+    if checkpoint_dir:
+        import os as _os
+        _os.makedirs(checkpoint_dir, exist_ok=True)
+        trainer.save_model(checkpoint_dir)
+        print(f"Checkpoint saved to {checkpoint_dir}")
 
     if session is not None:
         session.update({}, args.sessions_dir)
