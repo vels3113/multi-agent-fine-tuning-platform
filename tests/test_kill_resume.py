@@ -45,7 +45,7 @@ dataset:
     - "Write a function that computes factorial:"
 checkpoint:
   output_dir: {ckpt_dir}
-  save_steps: 2
+  save_steps: 1
 reward_guard: false
 """
     cfg_path = str(tmp_path / "config.yaml")
@@ -66,7 +66,9 @@ reward_guard: false
     # Wait for at least one checkpoint to appear
     deadline = time.time() + 120
     while time.time() < deadline:
-        ckpts = [d for d in os.listdir(ckpt_dir) if d.startswith("ckpt-")] if os.path.isdir(ckpt_dir) else []
+        import re as _re
+        ckpts = [d for d in os.listdir(ckpt_dir)
+                 if _re.match(r"^ckpt-\d{6}$", d)] if os.path.isdir(ckpt_dir) else []
         if ckpts:
             break
         if proc.poll() is not None:
@@ -78,7 +80,7 @@ reward_guard: false
         print(open(log_path).read()[-3000:])
         print("--- end log ---")
 
-    assert ckpts, f"No checkpoint written within 120s (proc exit={proc.poll()})"
+    assert ckpts, f"No completed checkpoint within 120s (proc exit={proc.poll()})"
 
     # Kill mid-run
     proc.send_signal(signal.SIGTERM)
