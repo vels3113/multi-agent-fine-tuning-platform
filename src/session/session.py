@@ -44,9 +44,10 @@ class Session:
                 "hostname": socket.gethostname(),
                 "num_gpus": num_gpus,
                 "peak_gpu_memory_mb": None,
-                "gpu_utilization_pct": None,  # deferred to P3a (rocm-smi integration)
+                "gpu_utilization_pct": None,
                 "total_duration_sec": None,
                 "latest_checkpoint": None,
+                "wandb_run_id": None,  # populated by WandbLogger in run.py (P3a)
             },
         )
         instance._t0 = time.perf_counter()

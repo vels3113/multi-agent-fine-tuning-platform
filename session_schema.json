@@ -54,14 +54,16 @@
     "runtime": {
       "type": "object",
       "required": ["hostname", "num_gpus", "peak_gpu_memory_mb",
-                   "gpu_utilization_pct", "total_duration_sec", "latest_checkpoint"],
+                   "gpu_utilization_pct", "total_duration_sec", "latest_checkpoint",
+                   "wandb_run_id"],
       "properties": {
         "hostname":             { "type": "string" },
         "num_gpus":             { "type": "integer", "minimum": 0 },
         "peak_gpu_memory_mb":   { "type": ["number", "null"] },
         "gpu_utilization_pct":  { "type": ["number", "null"] },
         "total_duration_sec":   { "type": ["number", "null"] },
-        "latest_checkpoint":    { "type": ["string", "null"] }
+        "latest_checkpoint":    { "type": ["string", "null"] },
+        "wandb_run_id":         { "type": ["string", "null"] }
       }
     }
   }

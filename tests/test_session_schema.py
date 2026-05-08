@@ -152,3 +152,22 @@ def test_run_py_stores_cfg_under_training_key():
     assert "training" in s.config
     assert s.config["training"]["model_params"]["joint_mode"] == "aligned"
     assert "baseline" not in s.config
+
+
+def test_runtime_has_wandb_run_id_field():
+    """P3a: wandb_run_id must be present in runtime schema and Session.start()."""
+    import json, os
+    schema_path = os.path.join(os.path.dirname(__file__), "..", "session_schema.json")
+    with open(schema_path) as f:
+        schema = json.load(f)
+    runtime_props = schema["properties"]["runtime"]["properties"]
+    assert "wandb_run_id" in runtime_props
+    assert runtime_props["wandb_run_id"]["type"] == ["string", "null"]
+
+
+def test_session_start_includes_wandb_run_id():
+    from src.session.session import Session
+    s = Session.start(config={"training": {"model": "test", "seed": 0}},
+                      stage={"baseline": False, "training": True})
+    assert "wandb_run_id" in s.runtime
+    assert s.runtime["wandb_run_id"] is None
