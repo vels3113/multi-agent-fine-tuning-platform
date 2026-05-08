@@ -143,6 +143,12 @@ def main():
               f"loss_mean={sum(_loss_history)/len(_loss_history):.4f} steps={len(_loss_history)}")
     print("Training complete.")
 
+    # Capture peak VRAM immediately after training, before any save/cleanup resets stats
+    peak_vram_mb = None
+    if torch.cuda.is_available():
+        peak_vram_mb = round(torch.cuda.max_memory_allocated() / 1024 ** 2, 2)
+        print(f"peak_gpu_memory_mb={peak_vram_mb}")
+
     # Save checkpoint
     checkpoint_dir = cfg.get("checkpoint", {}).get("output_dir")
     if checkpoint_dir:
@@ -152,6 +158,8 @@ def main():
         print(f"Checkpoint saved to {checkpoint_dir}")
 
     if session is not None:
+        if peak_vram_mb is not None:
+            session.runtime["peak_gpu_memory_mb"] = peak_vram_mb
         session.update({}, args.sessions_dir)
 
     return 0

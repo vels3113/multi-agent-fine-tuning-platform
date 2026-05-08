@@ -87,14 +87,15 @@ class Session:
         elapsed = time.perf_counter() - self._t0
         self.metrics = metrics
 
-        try:
-            import torch
-        except ImportError:
-            pass
-        else:
-            if torch.cuda.is_available():
-                peak_bytes = torch.cuda.max_memory_allocated()
-                self.runtime["peak_gpu_memory_mb"] = round(peak_bytes / 1024 ** 2, 2)
+        if self.runtime.get("peak_gpu_memory_mb") is None:
+            try:
+                import torch
+            except ImportError:
+                pass
+            else:
+                if torch.cuda.is_available():
+                    peak_bytes = torch.cuda.max_memory_allocated()
+                    self.runtime["peak_gpu_memory_mb"] = round(peak_bytes / 1024 ** 2, 2)
 
         self.runtime["total_duration_sec"] = round(elapsed, 3)
 
