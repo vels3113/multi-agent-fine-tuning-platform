@@ -12,6 +12,8 @@ from src.session.session import Session
 from src.training.checkpoint import CheckpointManager
 from src.training.guards import check_loss, check_kl, check_reward_collapse
 from src.training.watchdog import Watchdog
+from src.instrumentation.smi_poller import SmiPoller
+from src.instrumentation.wandb_logger import WandbLogger
 
 # ── Reward registry ──────────────────────────────────────────────────────────
 
@@ -137,6 +139,19 @@ def main():
     watchdog.start(initial_workers=len(__import__("multiprocessing").active_children()),
                    initial_batch=0)
 
+    # rocm-smi background polling — populates gpu_utilization_pct in session
+    smi_poll_interval = cfg.get("smi_poll_interval", 5.0)
+    smi_poller = SmiPoller(interval=smi_poll_interval)
+    smi_poller.start()
+
+    # W&B logging — optional, degrades gracefully without WANDB_API_KEY
+    wandb_cfg = cfg.get("wandb", {})
+    wb = WandbLogger(cfg=wandb_cfg)
+    wandb_run_id = wb.init(run_config=cfg)
+    if wandb_run_id:
+        os.environ["WANDB_RUN_ID"] = wandb_run_id
+        print(f"W&B run: {wandb_run_id}", flush=True)
+
     # Wrap _compute_loss_with_gradients to log per-step loss, run guards, and save checkpoints
     _loss_history = []
     _step_counter = [0]
@@ -169,6 +184,15 @@ def main():
             wandb_id = os.environ.get("WANDB_RUN_ID")
             cm.save(trainer, step=_step_counter[0], wandb_run_id=wandb_id)
 
+        # Log step metrics to W&B (includes loss + smi snapshot)
+        smi_snap = smi_poller.get_stats()
+        wb_metrics = {"train/loss": loss_val, "train/step": _step_counter[0]}
+        if smi_snap["gpu_utilization_pct_mean"] is not None:
+            wb_metrics["hardware/gpu_util_pct"] = smi_snap["gpu_utilization_pct_mean"]
+        if smi_snap["vram_used_mb_mean"] is not None:
+            wb_metrics["hardware/vram_used_mb"] = smi_snap["vram_used_mb_mean"]
+        wb.log(wb_metrics, step=_step_counter[0])
+
         return loss
 
     trainer._compute_loss_with_gradients = _logging_loss
@@ -180,6 +204,11 @@ def main():
     print("Training complete.")
 
     watchdog.stop()
+
+    smi_poller.stop()
+    smi_stats = smi_poller.get_stats()
+
+    wb.finish()
 
     # Capture peak VRAM immediately after training, before any save/cleanup resets stats
     peak_vram_mb = None
@@ -199,6 +228,10 @@ def main():
             session.runtime["peak_gpu_memory_mb"] = peak_vram_mb
         if latest_ckpt is not None:
             session.runtime["latest_checkpoint"] = latest_ckpt
+        if smi_stats.get("gpu_utilization_pct_mean") is not None:
+            session.runtime["gpu_utilization_pct"] = smi_stats["gpu_utilization_pct_mean"]
+        if wandb_run_id is not None:
+            session.runtime["wandb_run_id"] = wandb_run_id
         session.update({}, args.sessions_dir)
 
     return 0
