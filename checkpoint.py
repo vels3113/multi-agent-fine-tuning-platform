@@ -16,7 +16,9 @@ class CheckpointManager:
         name = f"ckpt-{step:06d}"
         ckpt_path = os.path.join(self.dir, name)
         tmp_path = ckpt_path + ".tmp"
-        os.makedirs(tmp_path, exist_ok=True)
+        if os.path.exists(tmp_path):
+            shutil.rmtree(tmp_path)
+        os.makedirs(tmp_path)
 
         # Support both MAGRPOTrainer (.agents list) and mock trainers (.model/.optimizer)
         if hasattr(trainer, "agents"):
@@ -57,6 +59,8 @@ class CheckpointManager:
         with open(os.path.join(tmp_path, "meta.json"), "w") as f:
             json.dump(meta, f)
 
+        if os.path.exists(ckpt_path):
+            shutil.rmtree(ckpt_path)
         os.rename(tmp_path, ckpt_path)
         self._rotate()
         return ckpt_path
