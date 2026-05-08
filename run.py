@@ -9,6 +9,9 @@ from transformers import AutoTokenizer
 from comlrl.trainers.reinforce.magrpo import MAGRPOTrainer, MAGRPOConfig
 from utils import build_tokenizer, assert_no_think_tokens
 from session import Session
+from checkpoint import CheckpointManager
+from guards import check_loss, check_kl, check_reward_collapse
+from watchdog import Watchdog
 
 # ── Reward registry ──────────────────────────────────────────────────────────
 
@@ -123,18 +126,49 @@ def main():
             return completions
         trainer._generate_completions = _guarded_gen
 
-    # Wrap _compute_loss_with_gradients to log per-step loss to stdout
+    ckpt_cfg = cfg.get("checkpoint", {})
+    ckpt_dir = ckpt_cfg.get("output_dir")
+    save_every = ckpt_cfg.get("save_steps", 1)
+    cm = CheckpointManager(ckpt_dir, keep=2) if ckpt_dir else None
+
+    shm_name = cfg.get("watchdog_shm", "magrpo_heartbeat")
+    watchdog = Watchdog(shm_name=shm_name, interval=2.0)
+    watchdog.start(initial_workers=len(__import__("multiprocessing").active_children()),
+                   initial_batch=0)
+
+    # Wrap _compute_loss_with_gradients to log per-step loss, run guards, and save checkpoints
     _loss_history = []
     _step_counter = [0]
+    _kl_baseline = [None]
     _original_loss = trainer._compute_loss_with_gradients
+
     def _logging_loss(agent, completions_data, returns):
         loss = _original_loss(agent, completions_data, returns)
         _step_counter[0] += 1
-        loss_val = loss.item() if hasattr(loss, 'item') else float(loss)
+        loss_val = loss.item() if hasattr(loss, "item") else float(loss)
         _loss_history.append(loss_val)
         if _step_counter[0] % 8 == 1 or _step_counter[0] <= 3:
             print(f"step={_step_counter[0]} loss={loss_val:.4f}", flush=True)
+
+        rewards = [float(r) for r in returns] if returns is not None else []
+        try:
+            check_loss(loss_val, step=_step_counter[0])
+            check_kl(current_kl=loss_val, baseline_kl=_kl_baseline[0],
+                     threshold_multiplier=20.0, step=_step_counter[0])
+            check_reward_collapse(rewards, step=_step_counter[0])
+        except ValueError as exc:
+            print(f"[GUARD] {exc} — skipping checkpoint save", flush=True)
+            return loss
+
+        if _kl_baseline[0] is None and loss_val > 0:
+            _kl_baseline[0] = loss_val
+
+        if cm and save_every and _step_counter[0] % save_every == 0:
+            wandb_id = os.environ.get("WANDB_RUN_ID")
+            cm.save(trainer, step=_step_counter[0], wandb_run_id=wandb_id)
+
         return loss
+
     trainer._compute_loss_with_gradients = _logging_loss
 
     trainer.train()
@@ -143,23 +177,26 @@ def main():
               f"loss_mean={sum(_loss_history)/len(_loss_history):.4f} steps={len(_loss_history)}")
     print("Training complete.")
 
+    watchdog.stop()
+
     # Capture peak VRAM immediately after training, before any save/cleanup resets stats
     peak_vram_mb = None
     if torch.cuda.is_available():
         peak_vram_mb = round(torch.cuda.max_memory_allocated() / 1024 ** 2, 2)
         print(f"peak_gpu_memory_mb={peak_vram_mb}")
 
-    # Save checkpoint
-    checkpoint_dir = cfg.get("checkpoint", {}).get("output_dir")
-    if checkpoint_dir:
-        import os as _os
-        _os.makedirs(checkpoint_dir, exist_ok=True)
-        trainer.save_model(checkpoint_dir)
-        print(f"Checkpoint saved to {checkpoint_dir}")
+    # Final checkpoint save
+    latest_ckpt = None
+    if cm:
+        wandb_id = os.environ.get("WANDB_RUN_ID")
+        latest_ckpt = cm.save(trainer, step=_step_counter[0], wandb_run_id=wandb_id)
+        print(f"Checkpoint saved to {latest_ckpt}")
 
     if session is not None:
         if peak_vram_mb is not None:
             session.runtime["peak_gpu_memory_mb"] = peak_vram_mb
+        if latest_ckpt is not None:
+            session.runtime["latest_checkpoint"] = latest_ckpt
         session.update({}, args.sessions_dir)
 
     return 0

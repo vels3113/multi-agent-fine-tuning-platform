@@ -19,7 +19,8 @@ def _load_schema():
 
 def _runtime():
     return {"hostname": "h", "num_gpus": 1, "peak_gpu_memory_mb": None,
-            "gpu_utilization_pct": None, "total_duration_sec": None}
+            "gpu_utilization_pct": None, "total_duration_sec": None,
+            "latest_checkpoint": None}
 
 
 def _baseline_only_session():

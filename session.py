@@ -46,6 +46,7 @@ class Session:
                 "peak_gpu_memory_mb": None,
                 "gpu_utilization_pct": None,  # deferred to P3a (rocm-smi integration)
                 "total_duration_sec": None,
+                "latest_checkpoint": None,
             },
         )
         instance._t0 = time.perf_counter()
