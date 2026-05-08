@@ -15,6 +15,7 @@ exec docker run --rm \
   --group-add render --group-add video \
   -v "$WORKSPACE:/workspace" \
   -v "$COMLRL_REPO_PATH:/comlrl" \
+  ${EXTRA_DOCKER_ARGS:-} \
   -e HF_HOME=/workspace/.hf_cache \
   -e TRANSFORMERS_VERBOSITY=error \
   -w /workspace \
