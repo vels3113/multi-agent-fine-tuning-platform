@@ -52,12 +52,16 @@ reward_guard: false
     with open(cfg_path, "w") as f:
         f.write(config)
 
-    # Start trainer
-    proc = subprocess.Popen(
-        [sys.executable, "run.py", "--config", cfg_path,
-         "--sessions-dir", sessions_dir],
-        cwd=os.path.dirname(os.path.dirname(__file__)),
-    )
+    log_path = str(tmp_path / "train.log")
+    # Start trainer with output captured for diagnostics
+    with open(log_path, "w") as log_f:
+        proc = subprocess.Popen(
+            [sys.executable, "run.py", "--config", cfg_path,
+             "--sessions-dir", sessions_dir],
+            cwd=os.path.dirname(os.path.dirname(__file__)),
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+        )
 
     # Wait for at least one checkpoint to appear
     deadline = time.time() + 120
@@ -65,8 +69,16 @@ reward_guard: false
         ckpts = [d for d in os.listdir(ckpt_dir) if d.startswith("ckpt-")] if os.path.isdir(ckpt_dir) else []
         if ckpts:
             break
+        if proc.poll() is not None:
+            break  # process exited — check log below
         time.sleep(2)
-    assert ckpts, "No checkpoint written within 120s"
+
+    if not ckpts and os.path.exists(log_path):
+        print("\n--- subprocess log ---")
+        print(open(log_path).read()[-3000:])
+        print("--- end log ---")
+
+    assert ckpts, f"No checkpoint written within 120s (proc exit={proc.poll()})"
 
     # Kill mid-run
     proc.send_signal(signal.SIGTERM)
