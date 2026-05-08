@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "RunSession",
-  "description": "One record per benchmarking or training run.",
+  "description": "One record per run. config.baseline holds the baseline YAML; config.training holds the training YAML.",
   "type": "object",
   "required": ["session_id", "timestamp", "user", "stage", "config", "metrics", "runtime"],
   "properties": {
@@ -19,25 +19,36 @@
     },
     "config": {
       "type": "object",
-      "required": ["model", "dataset", "num_problems", "num_runs",
-                   "batch_size", "max_new_tokens", "stop_sequences", "seed"],
       "properties": {
-        "model":          { "type": "string" },
-        "dataset":        { "type": "string" },
-        "num_problems":   { "type": "integer", "minimum": 1 },
-        "num_runs":       { "type": "integer", "minimum": 1 },
-        "batch_size":     { "type": "integer", "minimum": 1 },
-        "max_new_tokens": { "type": "integer", "minimum": 1 },
-        "stop_sequences": { "type": "array", "items": { "type": "string" } },
-        "seed":           { "type": "integer" }
-      }
+        "baseline": {
+          "type": "object",
+          "required": ["model", "seed"],
+          "properties": {
+            "model": { "type": "string" },
+            "seed":  { "type": "integer" }
+          },
+          "additionalProperties": true
+        },
+        "training": {
+          "type": "object",
+          "required": ["model", "seed"],
+          "properties": {
+            "model": { "type": "string" },
+            "seed":  { "type": "integer" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
     },
     "metrics": {
       "type": "object",
       "properties": {
         "test_pass_rate":              { "type": ["number", "null"] },
         "syntactic_correctness_ratio": { "type": ["number", "null"] },
-        "token_throughput_per_sec":    { "type": ["number", "null"] }
+        "token_throughput_per_sec":    { "type": ["number", "null"] },
+        "num_problems":                { "type": ["integer", "null"] },
+        "num_runs":                    { "type": ["integer", "null"] }
       }
     },
     "runtime": {

@@ -89,17 +89,7 @@ def main():
     print(f"Loading agent: {model_name}")
     agent = Agent(model_name=model_name, stop_sequences=stop_sequences)
 
-    session_config = {
-        "model": model_name,
-        "dataset": "openai/openai_humaneval",
-        "num_problems": len(problems),
-        "num_runs": num_runs,
-        "batch_size": batch_size,
-        "max_new_tokens": max_new_tokens,
-        "stop_sequences": stop_sequences,
-        "seed": cfg["seed"],
-    }
-    session = Session.start(session_config, stage={"baseline": True, "training": False})
+    session = Session.start({"baseline": cfg}, stage={"baseline": True, "training": False})
 
     all_completions = []
     run_syntactic_ratios = []
@@ -148,6 +138,8 @@ def main():
                 "test_pass_rate": test_pass_rate,
                 "syntactic_correctness_ratio": stats["syntactic_correctness_ratio"],
                 "token_throughput_per_sec": stats["token_throughput_per_sec"],
+                "num_problems": len(problems),
+                "num_runs": num_runs,
             },
             args.sessions_dir,
         )

@@ -48,36 +48,33 @@ def build_reward_fn(name: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True)
+    parser.add_argument("--config", default=None,
+                        help="Path to YAML config (required for fresh runs; omit when --resume-session is used)")
     parser.add_argument("--sessions-dir", default=None,
                         help="Directory to write session JSON (skipped if not set)")
     parser.add_argument("--resume-session", default=None,
-                        help="Session ID to resume (loads existing JSON, accumulates duration)")
+                        help="Session ID to resume (reads config from session.config['training'])")
     args = parser.parse_args()
-
-    cfg = load_config(args.config)
-    torch.manual_seed(cfg["seed"])
-
-    model_name = cfg["model"]
-    model_params = cfg.get("model_params", {})
-    enable_thinking = model_params.get("enable_thinking", False)
 
     if args.sessions_dir and args.resume_session:
         session = Session.load(args.resume_session, args.sessions_dir)
+        cfg = session.config["training"]
         print(f"Resumed session {session.session_id}")
-    elif args.sessions_dir:
-        session_config = {
-            "model": model_name,
-            "num_agents": cfg["num_agents"],
-            "num_train_epochs": cfg["num_train_epochs"],
-            "reward_func": cfg["reward_func"],
-            "dataset": cfg.get("dataset", {}).get("name"),
-            "seed": cfg["seed"],
-        }
-        session = Session.start(session_config, stage={"baseline": False, "training": True})
-        print(f"Started session {session.session_id}")
+    elif args.config:
+        cfg = load_config(args.config)
+        session = (
+            Session.start({"training": cfg}, stage={"baseline": False, "training": True})
+            if args.sessions_dir else None
+        )
+        if session:
+            print(f"Started session {session.session_id}")
     else:
-        session = None
+        raise SystemExit("error: --config is required when not using --resume-session")
+
+    torch.manual_seed(cfg["seed"])
+    model_name = cfg["model"]
+    model_params = cfg.get("model_params", {})
+    enable_thinking = model_params.get("enable_thinking", False)
 
     tokenizer = build_tokenizer(model_name)
     dataset = build_dataset(cfg)

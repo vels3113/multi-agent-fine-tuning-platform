@@ -1,0 +1,24 @@
+# Reference config for P2a — MAGRPO 2-agent (single-turn, aligned, full FT)
+# Live config: demo/configs/p2a-magrpo-2agent.yaml
+seed: 42
+model: "Qwen/Qwen3-1.7B"
+num_agents: 2
+num_train_epochs: 1
+reward_func: "dummy"
+
+model_params:
+  enable_thinking: false
+  joint_mode: "aligned"
+  num_generations: 4
+  max_new_tokens: 512
+  num_turns: 1
+  per_device_train_batch_size: 1
+  rollout_buffer_size: 4
+
+dataset:
+  type: "inline"
+  prompts:
+    - "Write a Python function that adds two numbers."
+    - "Write a Python function that returns the length of a list."
+    - "Write a Python function that reverses a string."
+    - "Write a Python function that checks if a number is even."
