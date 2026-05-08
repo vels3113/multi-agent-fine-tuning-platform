@@ -1,0 +1,79 @@
+"""Run session storage — records config, metrics, and runtime attributes per run."""
+import datetime
+import json
+import os
+import socket
+import time
+import uuid
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Session:
+    session_id: str
+    timestamp: str
+    user: str | None
+    stage: dict           # {"baseline": bool, "training": bool}
+    config: dict
+    metrics: dict
+    runtime: dict         # partially filled at start, completed at update()
+    _t0: float = field(default=0.0, repr=False)
+
+    @classmethod
+    def start(cls, config: dict, stage: dict, user: str | None = None) -> "Session":
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.reset_peak_memory_stats()
+            num_gpus = torch.cuda.device_count()
+        except Exception:
+            num_gpus = 0
+
+        t0 = time.perf_counter()
+        return cls(
+            session_id=str(uuid.uuid4()),
+            timestamp=datetime.datetime.utcnow().isoformat() + "Z",
+            user=user,
+            stage=stage,
+            config=config,
+            metrics={},
+            runtime={
+                "hostname": socket.gethostname(),
+                "num_gpus": num_gpus,
+                "peak_gpu_memory_mb": None,
+                "gpu_utilization_pct": None,
+                "total_duration_sec": None,
+            },
+            _t0=t0,
+        )
+
+    def update(self, metrics: dict, sessions_dir: str) -> None:
+        elapsed = time.perf_counter() - self._t0
+        self.metrics = metrics
+
+        try:
+            import torch
+            if torch.cuda.is_available():
+                peak_bytes = torch.cuda.max_memory_allocated()
+                self.runtime["peak_gpu_memory_mb"] = round(peak_bytes / 1024 ** 2, 2)
+        except Exception:
+            pass
+
+        self.runtime["total_duration_sec"] = round(elapsed, 3)
+
+        os.makedirs(sessions_dir, exist_ok=True)
+        out_path = os.path.join(sessions_dir, f"{self.session_id}.json")
+        tmp_path = out_path + ".tmp"
+        data = {
+            "session_id": self.session_id,
+            "timestamp": self.timestamp,
+            "user": self.user,
+            "stage": self.stage,
+            "config": self.config,
+            "metrics": self.metrics,
+            "runtime": self.runtime,
+        }
+        with open(tmp_path, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, out_path)
+        print(f"Session written to {out_path}")
