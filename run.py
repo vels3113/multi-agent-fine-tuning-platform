@@ -129,6 +129,7 @@ def main():
     ckpt_cfg = cfg.get("checkpoint", {})
     ckpt_dir = ckpt_cfg.get("output_dir")
     save_every = ckpt_cfg.get("save_steps", 1)
+    reward_guard_enabled = cfg.get("reward_guard", True)
     cm = CheckpointManager(ckpt_dir, keep=2) if ckpt_dir else None
 
     shm_name = cfg.get("watchdog_shm", "magrpo_heartbeat")
@@ -155,7 +156,8 @@ def main():
             check_loss(loss_val, step=_step_counter[0])
             check_kl(current_kl=loss_val, baseline_kl=_kl_baseline[0],
                      threshold_multiplier=20.0, step=_step_counter[0])
-            check_reward_collapse(rewards, step=_step_counter[0])
+            if reward_guard_enabled:
+                check_reward_collapse(rewards, step=_step_counter[0])
         except ValueError as exc:
             print(f"[GUARD] {exc} — skipping checkpoint save", flush=True)
             return loss

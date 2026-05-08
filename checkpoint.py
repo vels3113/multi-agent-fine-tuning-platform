@@ -18,10 +18,20 @@ class CheckpointManager:
         tmp_path = ckpt_path + ".tmp"
         os.makedirs(tmp_path, exist_ok=True)
 
-        torch.save(trainer.model.state_dict(), os.path.join(tmp_path, "model.pt"))
-        torch.save(trainer.optimizer.state_dict(), os.path.join(tmp_path, "optimizer.pt"))
+        # Support both MAGRPOTrainer (.agents list) and mock trainers (.model/.optimizer)
+        if hasattr(trainer, "agents"):
+            agents_state = [a.state_dict() for a in trainer.agents]
+            torch.save(agents_state, os.path.join(tmp_path, "model.pt"))
+        else:
+            torch.save(trainer.model.state_dict(), os.path.join(tmp_path, "model.pt"))
 
-        if trainer.lr_scheduler is not None:
+        if hasattr(trainer, "optimizers"):
+            optims_state = [o.state_dict() for o in trainer.optimizers]
+            torch.save(optims_state, os.path.join(tmp_path, "optimizer.pt"))
+        else:
+            torch.save(trainer.optimizer.state_dict(), os.path.join(tmp_path, "optimizer.pt"))
+
+        if not hasattr(trainer, "agents") and getattr(trainer, "lr_scheduler", None) is not None:
             torch.save(trainer.lr_scheduler.state_dict(), os.path.join(tmp_path, "scheduler.pt"))
 
         rng_state = {
@@ -35,7 +45,12 @@ class CheckpointManager:
         dl_state = trainer.get_dataloader_state() if callable(getattr(trainer, "get_dataloader_state", None)) else {}
         torch.save(dl_state, os.path.join(tmp_path, "dataloader.pt"))
 
-        rb = list(trainer.rollout_buffer) if trainer.rollout_buffer is not None else []
+        if hasattr(trainer, "rollout_buffers"):
+            rb = [list(buf) for buf in trainer.rollout_buffers] if trainer.rollout_buffers else []
+        elif hasattr(trainer, "rollout_buffer") and trainer.rollout_buffer is not None:
+            rb = list(trainer.rollout_buffer)
+        else:
+            rb = []
         torch.save(rb, os.path.join(tmp_path, "rollout_buffer.pt"))
 
         meta = {"step": step, "wandb_run_id": wandb_run_id}
@@ -51,11 +66,22 @@ class CheckpointManager:
         with open(meta_path) as f:
             meta = json.load(f)
 
-        trainer.model.load_state_dict(torch.load(os.path.join(ckpt_path, "model.pt"), weights_only=True))
-        trainer.optimizer.load_state_dict(torch.load(os.path.join(ckpt_path, "optimizer.pt"), weights_only=True))
+        model_data = torch.load(os.path.join(ckpt_path, "model.pt"), weights_only=True)
+        if hasattr(trainer, "agents"):
+            for agent, state in zip(trainer.agents, model_data):
+                agent.load_state_dict(state)
+        else:
+            trainer.model.load_state_dict(model_data)
+
+        optim_data = torch.load(os.path.join(ckpt_path, "optimizer.pt"), weights_only=True)
+        if hasattr(trainer, "optimizers"):
+            for optim, state in zip(trainer.optimizers, optim_data):
+                optim.load_state_dict(state)
+        else:
+            trainer.optimizer.load_state_dict(optim_data)
 
         sched_path = os.path.join(ckpt_path, "scheduler.pt")
-        if os.path.exists(sched_path) and trainer.lr_scheduler is not None:
+        if os.path.exists(sched_path) and getattr(trainer, "lr_scheduler", None) is not None:
             trainer.lr_scheduler.load_state_dict(torch.load(sched_path, weights_only=True))
 
         rng = torch.load(os.path.join(ckpt_path, "rng.pt"), weights_only=False)

@@ -32,3 +32,6 @@ dataset:
 checkpoint:
   output_dir: "/tmp/p2c_test_checkpoints"
   save_steps: 4
+
+# Disable reward-collapse guard when using constant dummy reward
+reward_guard: false

@@ -46,6 +46,7 @@ dataset:
 checkpoint:
   output_dir: {ckpt_dir}
   save_steps: 2
+reward_guard: false
 """
     cfg_path = str(tmp_path / "config.yaml")
     with open(cfg_path, "w") as f:
