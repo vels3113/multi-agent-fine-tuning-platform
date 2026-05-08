@@ -1,11 +1,14 @@
 """Run session storage — records config, metrics, and runtime attributes per run."""
 import datetime
 import json
+import logging
 import os
 import socket
 import time
 import uuid
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -17,22 +20,22 @@ class Session:
     config: dict
     metrics: dict
     runtime: dict         # partially filled at start, completed at update()
-    _t0: float = field(default=0.0, repr=False)
+    _t0: float = field(default=0.0, init=False, repr=False)
 
     @classmethod
     def start(cls, config: dict, stage: dict, user: str | None = None) -> "Session":
         try:
             import torch
+        except ImportError:
+            num_gpus = 0
+        else:
             if torch.cuda.is_available():
                 torch.cuda.reset_peak_memory_stats()
             num_gpus = torch.cuda.device_count()
-        except Exception:
-            num_gpus = 0
 
-        t0 = time.perf_counter()
-        return cls(
+        instance = cls(
             session_id=str(uuid.uuid4()),
-            timestamp=datetime.datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
             user=user,
             stage=stage,
             config=config,
@@ -41,11 +44,12 @@ class Session:
                 "hostname": socket.gethostname(),
                 "num_gpus": num_gpus,
                 "peak_gpu_memory_mb": None,
-                "gpu_utilization_pct": None,
+                "gpu_utilization_pct": None,  # deferred to P3a (rocm-smi integration)
                 "total_duration_sec": None,
             },
-            _t0=t0,
         )
+        instance._t0 = time.perf_counter()
+        return instance
 
     def update(self, metrics: dict, sessions_dir: str) -> None:
         elapsed = time.perf_counter() - self._t0
@@ -53,11 +57,12 @@ class Session:
 
         try:
             import torch
+        except ImportError:
+            pass
+        else:
             if torch.cuda.is_available():
                 peak_bytes = torch.cuda.max_memory_allocated()
                 self.runtime["peak_gpu_memory_mb"] = round(peak_bytes / 1024 ** 2, 2)
-        except Exception:
-            pass
 
         self.runtime["total_duration_sec"] = round(elapsed, 3)
 
@@ -73,7 +78,14 @@ class Session:
             "metrics": self.metrics,
             "runtime": self.runtime,
         }
-        with open(tmp_path, "w") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp_path, out_path)
-        print(f"Session written to {out_path}")
+        try:
+            with open(tmp_path, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_path, out_path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        logger.info("Session written to %s", out_path)

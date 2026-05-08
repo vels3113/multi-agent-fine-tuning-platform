@@ -15,7 +15,7 @@ def test_session_start_has_required_keys():
         stage={"baseline": True, "training": False},
     )
     assert isinstance(s.session_id, str)
-    uuid.UUID(s.session_id)  # raises if not valid uuid4
+    assert uuid.UUID(s.session_id).version == 4
     assert s.timestamp.endswith("Z")
     assert s.user is None
     assert s.stage == {"baseline": True, "training": False}
