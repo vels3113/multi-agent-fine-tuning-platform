@@ -18,7 +18,7 @@ def _make_trainer_mock():
 
 
 def test_save_creates_checkpoint_dir():
-    from checkpoint import CheckpointManager
+    from src.training.checkpoint import CheckpointManager
     with tempfile.TemporaryDirectory() as tmpdir:
         cm = CheckpointManager(tmpdir, keep=2)
         trainer = _make_trainer_mock()
@@ -27,7 +27,7 @@ def test_save_creates_checkpoint_dir():
 
 
 def test_save_writes_metadata_json():
-    from checkpoint import CheckpointManager
+    from src.training.checkpoint import CheckpointManager
     import json
     with tempfile.TemporaryDirectory() as tmpdir:
         cm = CheckpointManager(tmpdir, keep=2)
@@ -41,7 +41,7 @@ def test_save_writes_metadata_json():
 
 
 def test_rotate_keeps_last_two():
-    from checkpoint import CheckpointManager
+    from src.training.checkpoint import CheckpointManager
     with tempfile.TemporaryDirectory() as tmpdir:
         cm = CheckpointManager(tmpdir, keep=2)
         trainer = _make_trainer_mock()
@@ -53,7 +53,7 @@ def test_rotate_keeps_last_two():
 
 
 def test_latest_checkpoint_path():
-    from checkpoint import CheckpointManager
+    from src.training.checkpoint import CheckpointManager
     with tempfile.TemporaryDirectory() as tmpdir:
         cm = CheckpointManager(tmpdir, keep=2)
         assert cm.latest_path() is None
@@ -63,7 +63,7 @@ def test_latest_checkpoint_path():
 
 
 def test_load_restores_step_and_wandb_id():
-    from checkpoint import CheckpointManager
+    from src.training.checkpoint import CheckpointManager
     with tempfile.TemporaryDirectory() as tmpdir:
         cm = CheckpointManager(tmpdir, keep=2)
         trainer = _make_trainer_mock()

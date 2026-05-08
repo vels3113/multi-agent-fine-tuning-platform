@@ -147,7 +147,7 @@ def test_run_py_stores_cfg_under_training_key():
     }
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-    from session import Session
+    from src.session.session import Session
     s = Session.start({"training": training_cfg}, stage={"baseline": False, "training": True})
     assert "training" in s.config
     assert s.config["training"]["model_params"]["joint_mode"] == "aligned"

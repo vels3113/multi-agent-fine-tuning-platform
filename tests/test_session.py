@@ -7,7 +7,7 @@ import pytest
 
 
 def test_session_start_has_required_keys():
-    from session import Session
+    from src.session.session import Session
     s = Session.start(
         config={"model": "m", "dataset": "d", "num_problems": 3,
                 "num_runs": 1, "batch_size": 1, "max_new_tokens": 512,
@@ -26,7 +26,7 @@ def test_session_start_has_required_keys():
 
 
 def test_session_update_writes_json():
-    from session import Session
+    from src.session.session import Session
     s = Session.start(
         config={"model": "m", "dataset": "d", "num_problems": 3,
                 "num_runs": 1, "batch_size": 1, "max_new_tokens": 512,
@@ -51,7 +51,7 @@ def test_session_update_writes_json():
 
 
 def test_session_update_creates_sessions_dir():
-    from session import Session
+    from src.session.session import Session
     s = Session.start(
         config={"model": "m", "dataset": "d", "num_problems": 1,
                 "num_runs": 1, "batch_size": 1, "max_new_tokens": 128,
@@ -65,7 +65,7 @@ def test_session_update_creates_sessions_dir():
 
 
 def test_session_load_roundtrip():
-    from session import Session
+    from src.session.session import Session
     s = Session.start(
         config={"model": "m", "dataset": "d", "seed": 0},
         stage={"baseline": False, "training": True},

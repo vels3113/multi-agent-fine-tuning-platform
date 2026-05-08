@@ -7,11 +7,11 @@ import torch
 from datasets import load_dataset, Dataset
 from transformers import AutoTokenizer
 from comlrl.trainers.reinforce.magrpo import MAGRPOTrainer, MAGRPOConfig
-from utils import build_tokenizer, assert_no_think_tokens
-from session import Session
-from checkpoint import CheckpointManager
-from guards import check_loss, check_kl, check_reward_collapse
-from watchdog import Watchdog
+from src.utils import build_tokenizer, assert_no_think_tokens
+from src.session.session import Session
+from src.training.checkpoint import CheckpointManager
+from src.training.guards import check_loss, check_kl, check_reward_collapse
+from src.training.watchdog import Watchdog
 
 # ── Reward registry ──────────────────────────────────────────────────────────
 

@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 
-from watchdog import read_snapshot
+from src.training.watchdog import read_snapshot
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ import time
 
 
 def test_heartbeat_file_format():
-    from supervisor import _write_heartbeat
+    from src.training.supervisor import _write_heartbeat
     with tempfile.TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "heartbeat.json")
         _write_heartbeat(path, attempt=1, max_retries=3)
@@ -22,7 +22,7 @@ def test_heartbeat_file_format():
 
 def test_heartbeat_atomic_write():
     """Ensure no half-written file is ever visible."""
-    from supervisor import _write_heartbeat
+    from src.training.supervisor import _write_heartbeat
     with tempfile.TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "heartbeat.json")
         for i in range(10):

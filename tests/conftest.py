@@ -1,4 +1,4 @@
-"""Add platform/ to sys.path so tests can import top-level modules directly."""
+"""Add platform/ to sys.path so tests can import src.* packages directly."""
 import sys
 import os
 

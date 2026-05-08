@@ -87,7 +87,7 @@ reward_guard: false
     proc.wait(timeout=15)
 
     # Resume from latest checkpoint
-    from checkpoint import CheckpointManager
+    from src.training.checkpoint import CheckpointManager
     cm = CheckpointManager(ckpt_dir, keep=2)
     latest = cm.latest_path()
     assert latest is not None

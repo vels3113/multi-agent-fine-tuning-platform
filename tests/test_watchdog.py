@@ -13,7 +13,7 @@ def test_struct_size():
 
 
 def test_watchdog_starts_and_writes():
-    from watchdog import Watchdog
+    from src.training.watchdog import Watchdog
     wdog = Watchdog(shm_name="test_wdog_basic", interval=0.1)
     wdog.start(initial_workers=2, initial_batch=0)
     time.sleep(0.3)
@@ -28,7 +28,7 @@ def test_watchdog_starts_and_writes():
 
 
 def test_watchdog_batch_index_updates():
-    from watchdog import Watchdog
+    from src.training.watchdog import Watchdog
     wdog = Watchdog(shm_name="test_wdog_batch", interval=0.05)
     wdog.start(initial_workers=0, initial_batch=0)
     time.sleep(0.1)
@@ -43,7 +43,7 @@ def test_watchdog_batch_index_updates():
 
 
 def test_watchdog_stop_cleans_up():
-    from watchdog import Watchdog
+    from src.training.watchdog import Watchdog
     wdog = Watchdog(shm_name="test_wdog_cleanup", interval=0.05)
     wdog.start(initial_workers=0, initial_batch=0)
     wdog.stop()
@@ -52,7 +52,7 @@ def test_watchdog_stop_cleans_up():
 
 
 def test_read_snapshot_parses_correctly():
-    from watchdog import Watchdog, read_snapshot
+    from src.training.watchdog import Watchdog, read_snapshot
     wdog = Watchdog(shm_name="test_wdog_read", interval=0.05)
     wdog.start(initial_workers=3, initial_batch=7)
     time.sleep(0.15)
