@@ -42,6 +42,9 @@ src/
   instrumentation/
     smi_poller.py                   # Background rocm-smi polling → session + W&B hardware metrics
     wandb_logger.py                 # Optional W&B init / step logging
+  metrics/
+    trace_aggregate.py              # P3b JSONL → D1 aggregates (pure)
+    platform_insights_builder.py    # Merge traces + rocprof/smi → summary dict
 
 baseline/
   agent.py                          # Agent: model + tokenizer wrapper (multi-agent ready)
@@ -63,6 +66,8 @@ scripts/
   install-comlrl.sh                 # clone CoMLRL if not present
   inspect_completions.py            # diagnostic: log every completion, flag <think> / redacted thinking tokens
   rocprof-stack-profile.sh          # Episodic rocprof wrapper for stack comparisons (see script header)
+  build_platform_insights.py        # P3c: JSONL + rocprof/smi → demo/platform_insights/summary.json shape
+  export_training_metrics.py        # P3c: W&B row JSON → demo/wandb/training_metrics.json shape
 
 tests/                              # Host-side pytest suite (torch mocked where needed)
 ```
@@ -132,6 +137,30 @@ bash scripts/docker-run.sh \
 
 - Training configs may set `smi_poll_interval` (seconds) for rocm-smi polling and a `wandb:` block; see `configs/p3a-instrumentation.example.yaml`.
 - For vendor-style stack profiling with rocprof, use `scripts/rocprof-stack-profile.sh` from inside Docker; the script documents `ROCPROF_CMD`, output paths, and the need for a privileged container where rocprof requires it.
+
+### Analytics exports (P3c)
+
+- Catalog + schemas: `artifacts/P3c/METRIC_CATALOG.md`, `artifacts/P3c/*.schema.json`.
+- **Episodic rocprof → demo:** After a run, copy kernel timeline CSV and hardware-counter JSON into `demo/rocprof/` (paths in storyboard cold-start). Align episodic captures with the training steps you annotate in gate notes — see `METRIC_CATALOG.md` §capture workflow.
+- **Platform insights:** On CPU, from repo root or `platform/` (adjust paths):
+
+  ```bash
+  python scripts/build_platform_insights.py \
+    --steps-jsonl ../artifacts/P3b/sample-traces/<SESSION_ID>/steps.jsonl \
+    --rocprof-dir ../demo/rocprof \
+    --smi-csv ../demo/rocm_smi/gpu_utilization_log.csv \
+    --out ../demo/platform_insights/summary.json
+  ```
+
+- **W&B → frozen curves JSON:**
+
+  ```bash
+  python scripts/export_training_metrics.py \
+    --wandb-rows-json ./wandb_history_rows.json \
+    --out ../demo/wandb/training_metrics.json
+  ```
+
+  (`wandb_history_rows.json` is a JSON array of per-step dicts using `_step` or `step`, with keys matching `METRIC_CATALOG.md`.)
 
 ## Running tests
 

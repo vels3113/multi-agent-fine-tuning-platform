@@ -4,6 +4,7 @@ import sys
 import os
 import argparse
 import dataclasses
+import statistics
 import yaml
 import torch
 from datasets import load_dataset, Dataset
@@ -23,6 +24,10 @@ from src.instrumentation.pytorch_step_profiler import (
 )
 from src.instrumentation.step_trace_writer import StepTraceWriter
 from src.instrumentation.orchestration_timers import StepOrchestrationTimers
+from src.metrics.training_step_extract import (
+    infer_syntactic_correctness_ratio,
+    infer_task_pass_rate,
+)
 
 # ── Reward registry ──────────────────────────────────────────────────────────
 
@@ -275,6 +280,17 @@ def main():
         # Log step metrics to W&B (includes loss + smi snapshot)
         smi_snap = smi_poller.get_stats()
         wb_metrics = {"train/loss": loss_val, "train/step": _step_counter[0]}
+        if rewards:
+            wb_metrics["train/joint_reward"] = float(statistics.mean(rewards))
+        if len(rewards) >= 2:
+            wb_metrics["train/reward_std_across_agents"] = float(statistics.pstdev(rewards))
+        tpr = infer_task_pass_rate(completions_data)
+        if tpr is not None:
+            wb_metrics["train/task_pass_rate"] = float(tpr)
+        syn = infer_syntactic_correctness_ratio(completions_data)
+        if syn is not None:
+            wb_metrics["train/syntactic_correctness_ratio"] = float(syn)
+
         if smi_snap["gpu_utilization_pct_mean"] is not None:
             wb_metrics["hardware/gpu_util_pct"] = smi_snap["gpu_utilization_pct_mean"]
         if smi_snap["vram_used_mb_mean"] is not None:
