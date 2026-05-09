@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 import os
 import argparse
@@ -14,6 +16,13 @@ from src.training.guards import check_loss, check_kl, check_reward_collapse
 from src.training.watchdog import Watchdog
 from src.instrumentation.smi_poller import SmiPoller
 from src.instrumentation.wandb_logger import WandbLogger
+from src.instrumentation.pytorch_step_profiler import (
+    PytorchStepProfiler,
+    TRACING_VERSION,
+    step_tracing_disabled_by_env,
+)
+from src.instrumentation.step_trace_writer import StepTraceWriter
+from src.instrumentation.orchestration_timers import StepOrchestrationTimers
 
 # ── Reward registry ──────────────────────────────────────────────────────────
 
@@ -53,6 +62,17 @@ def build_reward_fn(name: str):
         raise ValueError(f"Unknown reward_func '{name}'. Available: {list(REWARD_REGISTRY)}")
     return REWARD_REGISTRY[name]
 
+
+def _resolve_trace_output_jsonl(tracing_cfg: dict, session, workspace_root: str) -> str:
+    rel_or_abs = tracing_cfg.get("trace_output_dir")
+    if not rel_or_abs:
+        trace_parent = os.path.join(workspace_root, "artifacts", "P3b", "sample-traces")
+    elif os.path.isabs(rel_or_abs):
+        trace_parent = rel_or_abs
+    else:
+        trace_parent = os.path.join(workspace_root, rel_or_abs)
+    sid = session.session_id if session else "no-session"
+    return os.path.join(trace_parent, sid, "steps.jsonl")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -110,6 +130,10 @@ def main():
         args=trainer_cfg,
     )
 
+    _loss_history: list[float] = []
+    _step_counter: list[int] = [0]
+    _kl_baseline: list[float | None] = [None]
+
     # Apply enable_thinking on all generation paths before training
     if not enable_thinking:
         for attr in ("model", "ref_model"):
@@ -127,6 +151,43 @@ def main():
                     assert_no_think_tokens(text, context="rollout completion")
             return completions
         trainer._generate_completions = _guarded_gen
+
+    workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    tracing_cfg = cfg.get("tracing") or {}
+    trace_enabled = bool(tracing_cfg.get("enabled", False)) and not step_tracing_disabled_by_env()
+    step_profiler: PytorchStepProfiler | None = None
+    trace_writer: StepTraceWriter | None = None
+    orch: StepOrchestrationTimers | None = None
+    trace_log_wandb = False
+
+    if trace_enabled:
+        pevery = int(tracing_cfg.get("profile_every_n_steps", 10))
+        export_chrome = bool(tracing_cfg.get("export_chrome_trace", False))
+        chrome_path = tracing_cfg.get("chrome_trace_path")
+        if chrome_path and not os.path.isabs(str(chrome_path)):
+            chrome_path = os.path.join(workspace_root, str(chrome_path))
+        step_profiler = PytorchStepProfiler(
+            profile_every_n=pevery,
+            export_chrome_trace=export_chrome,
+            chrome_trace_path=chrome_path,
+        )
+        orch = StepOrchestrationTimers()
+        trace_log_wandb = bool(tracing_cfg.get("log_to_wandb", False))
+        jsonl_path = _resolve_trace_output_jsonl(tracing_cfg, session, workspace_root)
+        trace_writer = StepTraceWriter(jsonl_path)
+        print(f"P3b tracing enabled → {jsonl_path}", flush=True)
+
+        _gen_for_trace = trainer._generate_completions
+
+        def _traced_generate(*args, **kwargs):
+            trace_step = _step_counter[0] + 1
+            assert orch is not None and step_profiler is not None
+            orch.reset()
+            step_profiler.on_rollout_start(trace_step)
+            with orch.rollout_scope():
+                return _gen_for_trace(*args, **kwargs)
+
+        trainer._generate_completions = _traced_generate
 
     ckpt_cfg = cfg.get("checkpoint", {})
     ckpt_dir = ckpt_cfg.get("output_dir")
@@ -153,13 +214,21 @@ def main():
         print(f"W&B run: {wandb_run_id}", flush=True)
 
     # Wrap _compute_loss_with_gradients to log per-step loss, run guards, and save checkpoints
-    _loss_history = []
-    _step_counter = [0]
-    _kl_baseline = [None]
     _original_loss = trainer._compute_loss_with_gradients
 
     def _logging_loss(agent, completions_data, returns):
-        loss = _original_loss(agent, completions_data, returns)
+        trace_step = _step_counter[0] + 1
+        if trace_enabled:
+            assert orch is not None and step_profiler is not None
+            with orch.loss_compute_scope():
+                loss = _original_loss(agent, completions_data, returns)
+            prof_part = step_profiler.on_loss_end(trace_step)
+            if prof_part is None:
+                prof_part = step_profiler.noop_loss_aggregates()
+        else:
+            loss = _original_loss(agent, completions_data, returns)
+            prof_part = None
+
         _step_counter[0] += 1
         loss_val = loss.item() if hasattr(loss, "item") else float(loss)
         _loss_history.append(loss_val)
@@ -167,6 +236,25 @@ def main():
             print(f"step={_step_counter[0]} loss={loss_val:.4f}", flush=True)
 
         rewards = [float(r) for r in returns] if returns is not None else []
+
+        if trace_enabled and trace_writer is not None and orch is not None and prof_part is not None:
+            row = {
+                "step": _step_counter[0],
+                "tracing_version": TRACING_VERSION,
+                "profiled": bool(prof_part["profiled"]),
+                "forward_ms": prof_part["forward_ms"],
+                "backward_ms": prof_part["backward_ms"],
+                "cuda_total_ms": prof_part["cuda_total_ms"],
+                "top_op_name": prof_part["top_op_name"],
+                "top_op_ms": prof_part["top_op_ms"],
+                "profiler_note": prof_part["profiler_note"],
+                "timer_rollout_wall_ms": orch.rollout_wall_ms,
+                "timer_loss_compute_wall_ms": orch.loss_compute_wall_ms,
+            }
+            if session is not None:
+                row["session_id"] = session.session_id
+            trace_writer.append(row)
+
         try:
             check_loss(loss_val, step=_step_counter[0])
             check_kl(current_kl=loss_val, baseline_kl=_kl_baseline[0],
@@ -191,6 +279,13 @@ def main():
             wb_metrics["hardware/gpu_util_pct"] = smi_snap["gpu_utilization_pct_mean"]
         if smi_snap["vram_used_mb_mean"] is not None:
             wb_metrics["hardware/vram_used_mb"] = smi_snap["vram_used_mb_mean"]
+
+        if trace_enabled and trace_log_wandb and prof_part and prof_part.get("profiled"):
+            for key in ("forward_ms", "backward_ms", "cuda_total_ms", "top_op_ms"):
+                val = prof_part.get(key)
+                if val is not None:
+                    wb_metrics[f"trace/{key}"] = val
+
         wb.log(wb_metrics, step=_step_counter[0])
 
         return loss

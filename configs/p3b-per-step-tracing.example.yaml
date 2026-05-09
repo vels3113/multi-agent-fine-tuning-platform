@@ -1,0 +1,48 @@
+# platform/configs/p3b-per-step-tracing.example.yaml
+# P3b — extends P3a instrumentation with optional per-step JSONL tracing (PyTorch profiler + CPU timers)
+seed: 42
+model: "Qwen/Qwen3-1.7B"
+num_agents: 2
+num_train_epochs: 1
+reward_func: "dummy"
+
+model_params:
+  enable_thinking: false
+  joint_mode: "aligned"
+  num_turns: 1
+  num_generations: 8
+  max_new_tokens: 512
+  learning_rate: 1.0e-6
+  kl_coef: 0.04
+  per_device_train_batch_size: 1
+  rollout_buffer_size: 8
+
+dataset:
+  type: inline
+  prompts:
+    - "Write a Python function that adds two numbers:"
+    - "Write a Python function that reverses a string:"
+    - "Write a Python function that checks if a number is prime:"
+    - "Write a Python function that computes the factorial:"
+
+checkpoint:
+  output_dir: "/workspace/artifacts/P3a/checkpoint"
+  save_steps: 999999
+
+watchdog_shm: "magrpo_p3b"
+
+smi_poll_interval: 5.0
+
+wandb:
+  project: null
+  entity: null
+  run_name: null
+
+# P3b — bounded step tracing (toggle for R3 overhead comparison)
+tracing:
+  enabled: true
+  profile_every_n_steps: 10
+  trace_output_dir: null
+  log_to_wandb: false
+  export_chrome_trace: false
+  chrome_trace_path: null
