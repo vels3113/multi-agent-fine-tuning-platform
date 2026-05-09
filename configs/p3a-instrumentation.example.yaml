@@ -28,7 +28,7 @@ dataset:
 
 checkpoint:
   output_dir: "/workspace/artifacts/P3a/checkpoint"
-  save_steps: 999999        # save once at end for overhead test
+  save_steps: 999999        # infrequent checkpoints for smoke / optional profile runs
 
 watchdog_shm: "magrpo_p3a"
 
