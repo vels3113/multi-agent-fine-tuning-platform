@@ -6,25 +6,42 @@ Training and evaluation platform for MAGRPO-based multi-agent fine-tuning of Qwe
 
 - AMD MI300X server with `rocm:latest` Docker image pre-loaded
 - CoMLRL repo cloned (handled by `make install-comlrl`)
-- Environment variables sourced from `project/.env` (see `.env.example`)
+- Environment variables sourced from `project/.env` (copy from `project/templates/.env.example`)
+- Optional: Weights & Biases API key in the environment for P3a-style runs (`WANDB_API_KEY`, plus `WANDB_PROJECT` / `WANDB_ENTITY` as needed)
 
 ## Quickstart
 
 ```bash
+cd platform
 source ../project/.env
 
+make help             # list Makefile targets
 make install-comlrl   # clone CoMLRL once per fresh server
 make smoke            # run P1a thinking-mode gate test
 make train CONFIG=configs/p1a-thinking-gate.yaml
 ```
 
+Other targets:
+
+- `make inspect` — log every completion from the model for a given `CONFIG` (no weight updates; useful for debugging generations).
+
 ## Structure
 
 ```
 run.py                              # MAGRPO training entry point (config-driven)
-session.py                          # Session: records config, metrics, and runtime per run
 session_schema.json                 # JSON Schema (draft-07) for session files
-utils.py                            # Shared helpers: build_tokenizer, assert_no_think_tokens
+
+src/
+  utils.py                          # Shared helpers: build_tokenizer, assert_no_think_tokens
+  session/session.py                # Session: records config, metrics, and runtime per run
+  training/
+    checkpoint.py                   # Checkpoint rotation + resume metadata
+    watchdog.py                     # Heartbeat / worker liveness (shared-memory)
+    guards.py                       # Loss / KL / reward-collapse checks around training steps
+    supervisor.py                   # Stall detection utilities (used in tests; extend for orchestration)
+  instrumentation/
+    smi_poller.py                   # Background rocm-smi polling → session + W&B hardware metrics
+    wandb_logger.py                 # Optional W&B init / step logging
 
 baseline/
   agent.py                          # Agent: model + tokenizer wrapper (multi-agent ready)
@@ -33,21 +50,21 @@ baseline/
   metrics.py                        # compute_syntactic_ratio, compute_token_throughput
 
 configs/
-  p1a-thinking-gate.yaml            # Qwen3-1.7B, enable_thinking=false (gate config)
+  p1a-thinking-gate.yaml            # Qwen3-1.7B, enable_thinking=false (P1a gate)
   p1b-baseline.example.yaml         # HumanEval baseline config template
+  p2a-magrpo-2agent.example.yaml    # Two-agent MAGRPO example
+  p2b-smoke.example.yaml            # Small smoke-style training config
+  p2c-checkpoint.example.yaml       # Checkpoint output_dir / save_steps example
+  p3a-instrumentation.example.yaml  # P3a reference: W&B + smi polling + checkpoint layout
 
 scripts/
   docker-run.sh                     # docker run wrapper (ROCm devices, workspace + CoMLRL mounts)
   smoke.sh                          # P1a thinking-mode smoke test
   install-comlrl.sh                 # clone CoMLRL if not present
-  inspect_completions.py            # diagnostic: log every completion, flag <think> tokens
-  analyze_p1b.py                    # offline analysis of P1b baseline artifacts
+  inspect_completions.py            # diagnostic: log every completion, flag <think> / redacted thinking tokens
+  rocprof-stack-profile.sh          # Episodic rocprof wrapper for stack comparisons (see script header)
 
-tests/
-  smoke_test_thinking.py            # asserts no <think> tokens in any completion
-  test_baseline.py                  # unit tests for metrics functions
-  test_session.py                   # unit tests for Session (start, update, load)
-  conftest.py                       # adds platform/ to sys.path for test imports
+tests/                              # Host-side pytest suite (torch mocked where needed)
 ```
 
 ## Running the baseline evaluator
@@ -69,38 +86,56 @@ Pass `EXTRA_DOCKER_ARGS="-v /path/to/sessions:/sessions"` to mount the sessions 
 
 ## Session storage
 
-Every run writes a JSON record to a sessions directory:
+Every run writes a JSON record to a sessions directory. Baseline runs store the evaluator YAML under `config.baseline`; training runs store the full training YAML under `config.training` (and may omit `baseline`). Example baseline-oriented record (fields may be null until the run finishes):
 
 ```json
 {
   "session_id": "<uuid4>",
   "timestamp": "2026-05-07T22:14:50Z",
+  "user": null,
   "stage": {"baseline": true, "training": false},
-  "config": {"model": "Qwen/Qwen3-1.7B", "num_problems": 164, ...},
-  "metrics": {"test_pass_rate": 0.0732, "token_throughput_per_sec": 612.7, ...},
-  "runtime": {"hostname": "amd-mi300x", "num_gpus": 1, "peak_gpu_memory_mb": 4187.3, ...}
+  "config": {
+    "baseline": {"model": "Qwen/Qwen3-1.7B", "seed": 42}
+  },
+  "metrics": {"test_pass_rate": 0.0732, "token_throughput_per_sec": 612.7},
+  "runtime": {
+    "hostname": "amd-mi300x",
+    "num_gpus": 1,
+    "peak_gpu_memory_mb": 4187.3,
+    "gpu_utilization_pct": null,
+    "total_duration_sec": 120.5,
+    "latest_checkpoint": null,
+    "wandb_run_id": null
+  }
 }
 ```
 
-Schema: `session_schema.json`. The P1b baseline session is at `demo/sessions/a7c4f91b-3e2d-4b8a-8f6e-5d0c7a1b9e3f.json`.
+Schema: `session_schema.json`. A sample P1b baseline session path is referenced from the demo layout (`demo/sessions/...`).
 
 **Training** (`run.py`):
 
 ```bash
 # Start a new training session
 bash scripts/docker-run.sh \
-  "python run.py --config configs/p1a-thinking-gate.yaml --sessions-dir /sessions"
+  "pip install pyyaml datasets -q && \
+   python run.py --config configs/p1a-thinking-gate.yaml --sessions-dir /sessions"
 
 # Resume after checkpoint recovery
 bash scripts/docker-run.sh \
-  "python run.py --config configs/p1a-thinking-gate.yaml \
-     --sessions-dir /sessions \
-     --resume-session <session-id>"
+  "pip install pyyaml datasets -q && \
+   python run.py --sessions-dir /sessions --resume-session <session-id>"
 ```
 
 **Evaluation** (`baseline/eval_baseline.py`): pass `--sessions-dir` to write a baseline session.
 
+### Instrumentation and profiling
+
+- Training configs may set `smi_poll_interval` (seconds) for rocm-smi polling and a `wandb:` block; see `configs/p3a-instrumentation.example.yaml`.
+- For vendor-style stack profiling with rocprof, use `scripts/rocprof-stack-profile.sh` from inside Docker; the script documents `ROCPROF_CMD`, output paths, and the need for a privileged container where rocprof requires it.
+
 ## Running tests
+
+From `platform/`:
 
 ```bash
 uvx pytest tests/ -v
