@@ -20,7 +20,7 @@ def _load_schema():
 def _runtime():
     return {"hostname": "h", "num_gpus": 1, "peak_gpu_memory_mb": None,
             "gpu_utilization_pct": None, "total_duration_sec": None,
-            "latest_checkpoint": None}
+            "latest_checkpoint": None, "wandb_run_id": None}
 
 
 def _baseline_only_session():
