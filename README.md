@@ -2,6 +2,28 @@
 
 Training and evaluation platform for MAGRPO-based multi-agent fine-tuning of Qwen3-1.7B on AMD MI300X.
 
+## ROCm-related tooling
+
+Training and profiling assume **ROCm in Docker** on AMD hardware. Host access to the GPU typically uses `/dev/kfd` and `/dev/dri` with `render` / `video` groups; `platform/scripts/docker-run.sh` encodes this for routine commands.
+
+### `rocm-smi` (routine monitoring)
+
+- **What it answers:** GPU utilization, VRAM use, and device visibility — suitable for dashboards and session records alongside step metrics.
+- **How this repo uses it:** When `smi_poll_interval` is set in the training YAML, `src/instrumentation/smi_poller.py` runs `rocm-smi --showuse --showmeminfo vram --json` on a background thread and attaches parsed values to the session (and to W&B when configured).
+- **Operational note:** If a container sees no GPUs, retry with Docker networking / IPC tweaks documented in the P0a gate scripts (e.g. `--ipc=host` once); silent empty device lists are a common pitfall.
+
+### `rocprof` / `rocprofv2` / `rocprofv3` (episodic profiling)
+
+- **What it answers:** Kernel execution, HIP activity, and overlap — questions **`rocm-smi` alone cannot** (e.g. after a ROCm or PyTorch bump, “did the kernel mix change?”).
+- **How this repo uses it:** **`scripts/rocprof-stack-profile.sh`** wraps `run.py` with `rocprof`. Set `ROCPROF_CMD` (`rocprofv3` default, or `rocprofv2`). Output goes under `ROCPROF_OUTPUT_DIR` (see script header). This is for **short, bounded** runs; `--hip-trace` output can be **very large**.
+- **Privileges:** `rocprofv3` commonly requires a **privileged** container and GPU devices; align with `project/implementation/P3a/P3a-1-Setup-Instruction.md`. Perf-counter enumeration may still be restricted without privilege — then rely on `rocm-smi` + PyTorch profiler for evidence.
+
+### Stack validation (reference)
+
+- Gate and agent scripts under `project/implementation/P0a/scripts/` (e.g. `agent-d.sh`) document **availability checks** for `rocm-smi` and `rocprof` inside the image and fallback behavior if profiling tools are missing.
+
+---
+
 ## Requirements
 
 - AMD MI300X server with `rocm:latest` Docker image pre-loaded
@@ -133,10 +155,10 @@ bash scripts/docker-run.sh \
 
 **Evaluation** (`baseline/eval_baseline.py`): pass `--sessions-dir` to write a baseline session.
 
-### Instrumentation and profiling
+### Instrumentation and profiling (quick pointers)
 
-- Training configs may set `smi_poll_interval` (seconds) for rocm-smi polling and a `wandb:` block; see `configs/p3a-instrumentation.example.yaml`.
-- For vendor-style stack profiling with rocprof, use `scripts/rocprof-stack-profile.sh` from inside Docker; the script documents `ROCPROF_CMD`, output paths, and the need for a privileged container where rocprof requires it.
+- Training configs may set `smi_poll_interval` (seconds) for `rocm-smi` polling and a `wandb:` block; see `configs/p3a-instrumentation.example.yaml`.
+- For episodic stack profiling with **rocprof**, use `scripts/rocprof-stack-profile.sh` from inside Docker (see **ROCm-related tooling** above for `ROCPROF_CMD`, output directories, and privilege requirements).
 
 ### Analytics exports (P3c)
 
