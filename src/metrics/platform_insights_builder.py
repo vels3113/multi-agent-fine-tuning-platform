@@ -33,7 +33,8 @@ def build_platform_insights(
     rows = load_steps_jsonl(str(steps_jsonl))
     d1, d1_note_parts = aggregate_d1_from_jsonl(rows)
 
-    source_notes: list[str] = [f"steps_jsonl={steps_jsonl.name} rows={len(rows)}"]
+    sj = str(Path(steps_jsonl).resolve())
+    source_notes: list[str] = [f"steps_jsonl_path={sj} rows={len(rows)}"]
 
     rocprof_dir = Path(rocprof_dir) if rocprof_dir else None
 
