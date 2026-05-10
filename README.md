@@ -1,6 +1,6 @@
 # multi-agent-fine-tuning-platform
 
-Training and evaluation platform for MAGRPO-based multi-agent fine-tuning of Qwen3-1.7B on AMD MI300X.
+Training and evaluation platform for multi-agent fine-tuning of open models on AMD MI300X.
 
 ## ROCm-related tooling
 
@@ -18,34 +18,13 @@ Training and profiling assume **ROCm in Docker** on AMD hardware. Host access to
 - **How this repo uses it:** **`scripts/rocprof-stack-profile.sh`** wraps `run.py` with `rocprof`. Set `ROCPROF_CMD` (`rocprofv3` default, or `rocprofv2`). Output goes under `ROCPROF_OUTPUT_DIR` (see script header). This is for **short, bounded** runs; `--hip-trace` output can be **very large**.
 - **Privileges:** `rocprofv3` commonly requires a **privileged** container and GPU devices; align with `project/implementation/P3a/P3a-1-Setup-Instruction.md`. Perf-counter enumeration may still be restricted without privilege — then rely on `rocm-smi` + PyTorch profiler for evidence.
 
-### Stack validation (reference)
-
-- Gate and agent scripts under `project/implementation/P0a/scripts/` (e.g. `agent-d.sh`) document **availability checks** for `rocm-smi` and `rocprof` inside the image and fallback behavior if profiling tools are missing.
-
 ---
 
 ## Requirements
 
 - AMD MI300X server with `rocm:latest` Docker image pre-loaded
 - CoMLRL repo cloned (handled by `make install-comlrl`)
-- Environment variables sourced from `project/.env` (copy from `project/templates/.env.example`)
 - Optional: Weights & Biases API key in the environment for P3a-style runs (`WANDB_API_KEY`, plus `WANDB_PROJECT` / `WANDB_ENTITY` as needed)
-
-## Quickstart
-
-```bash
-cd platform
-source ../project/.env
-
-make help             # list Makefile targets
-make install-comlrl   # clone CoMLRL once per fresh server
-make smoke            # run P1a thinking-mode gate test
-make train CONFIG=configs/p1a-thinking-gate.yaml
-```
-
-Other targets:
-
-- `make inspect` — log every completion from the model for a given `CONFIG` (no weight updates; useful for debugging generations).
 
 ## Structure
 
@@ -75,11 +54,7 @@ baseline/
   metrics.py                        # compute_syntactic_ratio, compute_token_throughput
 
 configs/
-  p1a-thinking-gate.yaml            # Qwen3-1.7B, enable_thinking=false (P1a gate)
   p1b-baseline.example.yaml         # HumanEval baseline config template
-  p2a-magrpo-2agent.example.yaml    # Two-agent MAGRPO example
-  p2b-smoke.example.yaml            # Small smoke-style training config
-  p2c-checkpoint.example.yaml       # Checkpoint output_dir / save_steps example
   p3a-instrumentation.example.yaml  # P3a reference: W&B + smi polling + checkpoint layout
 
 scripts/
