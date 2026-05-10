@@ -132,6 +132,8 @@ def test_p2b_smoke_config_scope_locks():
     assert cfg["model_params"]["joint_mode"] == "aligned"
     assert cfg["model_params"]["num_turns"] == 1
     assert cfg["model"] == "Qwen/Qwen3-1.7B"
+    assert cfg["dataset"]["type"] == "humaneval"
+    assert cfg["dataset"].get("split", "test") == "test"
 
 
 def test_run_py_stores_cfg_under_training_key():

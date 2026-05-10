@@ -19,8 +19,8 @@ model_params:
   # kl_coef: not a MAGRPOConfig field in CoMLRL 1.3.8 — deviation documented in GATE_SUMMARY
 
 dataset:
-  type: "mbpp"
-  split: "train"
+  type: "humaneval"
+  split: "test"
   max_problems: 64
 
 checkpoint:
