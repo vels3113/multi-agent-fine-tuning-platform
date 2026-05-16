@@ -4,7 +4,7 @@ Training and evaluation platform for multi-agent fine-tuning of open models on A
 
 ## ROCm-related tooling
 
-Training and profiling assume **ROCm in Docker** on AMD hardware. Host access to the GPU typically uses `/dev/kfd` and `/dev/dri` with `render` / `video` groups; `platform/scripts/docker-run.sh` encodes this for routine commands.
+Training and profiling assume **ROCm in Docker** on AMD hardware. Host access to the GPU typically uses `/dev/kfd` and `/dev/dri` with `render` / `video` groups; `scripts/docker-run.sh` encodes this for routine commands.
 
 ### `rocm-smi` (routine monitoring)
 
